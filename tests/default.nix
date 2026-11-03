@@ -256,10 +256,6 @@ in
         touch "$out"
       '';
 
-  # sassc comes from a git source whose libsass is a submodule; its native
-  # extension compiles libsass from the submodule's checkout.
-  fixture-submodules = runsMain "fixture-submodules-runs" submodules ".purified{width:3px}";
-
   # The library's test run, its `tests`.
   fixture-library-tests = library.tests;
 
@@ -326,4 +322,12 @@ in
         bundle exec ruby -e 'require "vips"; puts "libvips #{Vips.version_string}"' | tee -a "$out"
         grep -q '^libvips ' "$out"
       '';
+}
+# sassc comes from a git source whose libsass is a submodule; its native
+# extension compiles libsass from the submodule's checkout. Not on darwin:
+# libsass has two test directories whose names differ only in Unicode
+# normalization, which APFS takes for one name, so a checkout there lacks
+# two files and never matches the locked hash.
+// lib.optionalAttrs (!pkgs.stdenv.hostPlatform.isDarwin) {
+  fixture-submodules = runsMain "fixture-submodules-runs" submodules ".purified{width:3px}";
 }

@@ -263,6 +263,14 @@ let
   rubyVersion = lib.versions.splitVersion (builtins.seq checkedLock lock.ruby);
   rubyAttr = "ruby_${builtins.elemAt rubyVersion 0}_${builtins.elemAt rubyVersion 1}";
   rubies = lib.filterAttrs (_: r: r != null) { inherit ruby_3_4 ruby_4_0; };
+  # The start of the platform an SDK records (Gem::Platform.local) on this
+  # system. RubyGems names Linux as Nix does, but aarch64-darwin is
+  # arm64-darwin-<version> to it.
+  gemPlatform =
+    if stdenv.hostPlatform.system == "aarch64-darwin" then
+      "arm64-darwin"
+    else
+      stdenv.hostPlatform.system;
   ruby' =
     if ruby != null then
       ruby
@@ -270,7 +278,7 @@ let
       assert
         lib.length sdkOrigins == 1 || throw "bundler-purifier: Nix inputs require different Ruby SDKs";
       assert
-        lib.all (entry: lib.hasPrefix stdenv.hostPlatform.system entry.system) sdkRequirements
+        lib.all (entry: lib.hasPrefix gemPlatform entry.system) sdkRequirements
         || throw "bundler-purifier: Nix input Ruby SDK is for a different platform";
       builtins.appendContext (lib.head sdkOrigins) sdkContext
     else

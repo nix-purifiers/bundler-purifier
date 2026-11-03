@@ -8,6 +8,12 @@
 source "$(dirname "$0")/common.sh"
 
 for fixture in app library submodules update; do
+  # A darwin relock writes another hash for the submodules fixture's git
+  # checkout (see fixture-submodules in tests/default.nix).
+  if [[ "$fixture" == submodules && "$system" == *-darwin ]]; then
+    echo "== relock of $fixture skipped on darwin"
+    continue
+  fi
   echo "== relock of $fixture"
   (cd "$work/fixtures/$fixture" && "$cli" lock --force)
   diff -u "$repo/tests/fixtures/$fixture/Gemfile.lock" "$work/fixtures/$fixture/Gemfile.lock"

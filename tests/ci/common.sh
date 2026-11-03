@@ -13,7 +13,7 @@ export system=$(nix eval --raw --impure --expr builtins.currentSystem)
 cli="$(nix build --no-link --print-out-paths '.#cli')/bin/bundler-purifier"
 ruby=$(grep -o '/nix/store/[^"]*-ruby-[^/"]*/bin' "$cli" | head -n 1)
 nixpkgs=$(grep -o "BUNDLER_PURIFIER_NIXPKGS='[^']*'" "$cli" | cut -d"'" -f2)
-toolchain=$(nix-build "$nixpkgs" -A stdenv.cc -A gnumake --no-out-link | sed 's|$|/bin|' | paste -sd:)
+toolchain=$(nix-build "$nixpkgs" -A stdenv.cc -A gnumake --no-out-link | sed 's|$|/bin|' | paste -sd: -)
 export PATH="$ruby:$toolchain:$PATH"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

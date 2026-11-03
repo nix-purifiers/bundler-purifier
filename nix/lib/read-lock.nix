@@ -8,7 +8,8 @@
 #   entries   the download entries of the shared library: a file entry per
 #             gem file and for Bundler's own gem, and a git entry per git
 #             checkout; a gem built for one platform carries `systems`,
-#             the Nix systems it installs on (none for darwin or musl)
+#             the Nix systems it installs on (none for x86_64 darwin or
+#             musl)
 #   outputs   the outputs the builder makes: `app`, `bundle`, and a gem per
 #             gemspec of the project, with its version and executables
 #   problems  why the lockfiles cannot be used, each naming the fix: a
@@ -204,8 +205,9 @@ let
   withSlash = url: if lib.hasSuffix "/" url then url else "${url}/";
 
   # The Nix systems a gem built for a platform installs on: Linux on
-  # x86_64 or aarch64 with glibc. A gem for any other platform (darwin,
-  # musl, 32-bit ARM, Windows) installs on none of them.
+  # x86_64 or aarch64 with glibc, and macOS on arm64. A gem for any other
+  # platform (x86_64 darwin, a darwin of one macOS version, musl, 32-bit
+  # ARM, Windows) installs on none of them.
   systemsOf =
     platform:
     if
@@ -222,6 +224,8 @@ let
       ]
     then
       [ "aarch64-linux" ]
+    else if platform == "arm64-darwin" then
+      [ "aarch64-darwin" ]
     else
       [ ];
 

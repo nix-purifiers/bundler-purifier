@@ -4,7 +4,8 @@ bundler-purifier keeps Bundler's development workflow on locked,
 Nix-resolved dependencies.
 
 The shared [purifier](https://github.com/nix-purifiers/purifier) library
-fetches the downloads. It builds on x86_64-linux and aarch64-linux.
+fetches the downloads. It builds on x86_64-linux, aarch64-linux and
+aarch64-darwin.
 
 ## Quickstart
 
