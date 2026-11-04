@@ -37,6 +37,16 @@ let
   };
 in
 {
+  historical-ruby-input-composition =
+    pkgs.runCommand "bundler117-input-composition"
+      {
+        nativeBuildInputs = [ pkgs.python3 ];
+      }
+      ''
+        export HOME=$TMPDIR
+        python3 ${../.}/tests/historical-composition.py ${nativeBundler} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog}
+        touch $out
+      '';
   historical-ruby-tools = nativeBundler;
   historical-ruby-app = project.packages.app;
   historical-ruby-native-extension = project.tests;
