@@ -229,6 +229,10 @@ module BundlerPurifier
         fail!("Nix input Ruby #{entry.fetch('ruby')} conflicts with project Ruby #{wanted}") if wanted && wanted.split(".")[0,2] != entry.fetch("ruby").split(".")[0,2]
         fail!("Nix input Ruby SDK is for #{entry.fetch('system')}, current platform is #{Gem::Platform.local}") unless entry.fetch("system") == Gem::Platform.local.to_s
         File.join(sdk_origins.first, "bin")
+      elsif !(selected = ENV.fetch("BUNDLER_PURIFIER_PROJECT_RUBY", "")).empty?
+        actual = capture!(File.join(selected, "bin/ruby"), "-e", "print RUBY_VERSION")
+        fail!("selected Ruby #{actual} conflicts with project Ruby #{wanted}") if wanted && wanted.split(".")[0,2] != actual.split(".")[0,2]
+        File.join(selected, "bin")
       elsif wanted.nil? || wanted.split(".")[0, 2] == RUBY_VERSION.split(".")[0, 2]
         RbConfig::CONFIG["bindir"]
       else
@@ -367,7 +371,9 @@ module BundlerPurifier
         native_bundle!(env, "lock", persist_lock: true)
       end
 
-      native_bundle!(env, "cache", "--all-platforms", "--no-install", persist_lock: true)
+      locked_bundler = Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version
+      cache_command = locked_bundler && locked_bundler < Gem::Version.new("2.0") ? "package" : "cache"
+      native_bundle!(env, cache_command, "--all-platforms", "--no-install", persist_lock: true)
       cache = env["BUNDLE_CACHE_PATH"]
       text = File.read(gemfile_lock_path)
       parser = Bundler::LockfileParser.new(text)
@@ -578,7 +584,9 @@ module BundlerPurifier
   # nix/lib/realize.nix.
   def realize_args
     ["--argstr", "root", root, "--argstr", "lockFile", lockfile_path, "--argstr", "gemfileLock", gemfile_lock_path,
-     "--arg", "nixpkgs", nixpkgs, "--argstr", "purifierFlake", shared_flake, "--argstr", "integrationTools", tools_dir]
+     "--arg", "nixpkgs", nixpkgs, "--argstr", "purifierFlake", shared_flake, "--argstr", "integrationTools", tools_dir,
+     "--argstr", "rubyExpression", ENV.fetch("BUNDLER_PURIFIER_RUBY_EXPRESSION", ""),
+     "--argstr", "nativeBuildInputsExpression", ENV.fetch("BUNDLER_PURIFIER_NATIVE_BUILD_INPUTS_EXPRESSION", "[ ]")]
   end
 
   # The user's PATH, then the Ruby that runs this script, so that publish
@@ -610,6 +618,7 @@ module BundlerPurifier
          File.join(built, "bundler-#{bundler_version}.gem"), chdir: root)
     locked_env = { "GEM_HOME" => bundler_home, "GEM_PATH" => bundler_home,
                    "BUNDLER_PURIFIER_BUNDLER_VERSION" => bundler_version }
+    config_command = Gem::Version.new(bundler_version) >= Gem::Version.new("2.1") ? %w[config set --local] : %w[config --local]
 
     cache = File.join(state_dir, "cache")
     FileUtils.rm_rf(cache)
@@ -624,13 +633,13 @@ module BundlerPurifier
         FileUtils.chmod_R("u+w", dest)
       end
     end
-    run!({}, "nix", "develop", shell, "--command", "bundle", "config", "set", "--local", "cache_path", cache, chdir: root)
+    run!({}, "nix", "develop", shell, "--command", "bundle", *config_command, "cache_path", cache, chdir: root)
     # A fresh project gets its own gems, rather than sharing the Ruby's
     # system or user gem directory. Explicit Bundler paths (including
     # path.system) remain the user's choice.
     settings = Bundler::Settings.new(File.join(root, ".bundle"))
     unless settings[:path] || settings["path.system"]
-      run!({}, "nix", "develop", shell, "--command", "bundle", "config", "set", "--local", "path", "vendor/bundle", chdir: root)
+      run!({}, "nix", "develop", shell, "--command", "bundle", *config_command, "path", "vendor/bundle", chdir: root)
     end
     with_gemfile_lock_in_tree do
       if (@input_views || []).empty?
