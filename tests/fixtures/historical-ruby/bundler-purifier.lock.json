@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "definitionHash": "sha256-VlUXM/izFIvq9YDbgNd7alQhyumBbLITfAQ55HZCGvc=",
+  "ruby": "2.5.8",
+  "bundlerHash": "sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I=",
+  "gemHashes": {
+    "json-1.8.6.gem": "sha256-Za8nyphfcOsNCDqrD3VxLHcYcSIq8CHOUzutd707smI="
+  },
+  "executables": {
+    "historical_greeting": [
+      "historical-greeting"
+    ]
+  },
+  "contentHash": "sha256-ruX1JKiOGPfdF5kxqfwqkccPgnC7H4FATTRxpCeNVvE="
+}

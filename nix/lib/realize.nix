@@ -16,6 +16,8 @@
   # The shared nix-purifiers library as a locked flake reference.
   purifierFlake,
   integrationTools ? ../../tools,
+  rubyExpression ? "",
+  nativeBuildInputsExpression ? "[ ]",
 }:
 let
   pkgs = import nixpkgs { };
@@ -28,6 +30,13 @@ let
   src = /. + root;
   lockFile' = /. + lockFile;
   gemfileLock' = /. + gemfileLock;
+  projectRuby =
+    if rubyExpression == "" then
+      { }
+    else
+      {
+        ruby = import (builtins.toFile "bundler-project-ruby.nix" rubyExpression);
+      };
   # The path sources outside the project are on disk beside it, at the
   # paths Gemfile.lock gives them.
   externalPaths = builtins.listToAttrs (
@@ -43,8 +52,14 @@ let
       }).bundlerLock.externalPaths
   );
 in
-buildBundlerProject {
-  inherit src externalPaths;
-  lockFile = lockFile';
-  gemfileLock = gemfileLock';
-}
+buildBundlerProject (
+  projectRuby
+  // {
+    nativeBuildInputs = import (
+      builtins.toFile "bundler-native-build-inputs.nix" nativeBuildInputsExpression
+    );
+    inherit src externalPaths;
+    lockFile = lockFile';
+    gemfileLock = gemfileLock';
+  }
+)

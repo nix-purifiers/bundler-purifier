@@ -13,5 +13,9 @@
     url = "github:lobsters/lobsters/cb2b28371dbf5549b6fad293a6c2dfc8ec7a0320";
     flake = false;
   };
+  inputs.historical-ruby = {
+    url = "github:NixOS/nixpkgs/1db42b7fe3878f3f5f7a4f2dc210772fd080e205";
+    flake = false;
+  };
   outputs = { ... }: { };
 }

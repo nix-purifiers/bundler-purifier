@@ -366,16 +366,16 @@ let
     # Bundler version of BUNDLED WITH and Bundler has nothing to fetch.
     gem install --local --no-document --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" \
       vendor/cache/bundler-${lock.bundler}.gem
-    bundle config set --local cache_path vendor/cache
+    bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local cache_path vendor/cache
     ${lib.optionalString (selectedInputs != [ ]) ''
       BUNDLER_PURIFIER_PERSIST_LOCK=1 BUNDLE_FROZEN=false BUNDLE_DEPLOYMENT=false \
         bundle lock --local >&2
     ''}
-    bundle config set --local deployment true
-    bundle config set --local frozen true
-    bundle config set --local path vendor/bundle
+    bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local deployment true
+    bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local frozen true
+    bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local path vendor/bundle
     ${lib.optionalString (without != [ ]) ''
-      bundle config set --local without ${lib.escapeShellArg (lib.concatStringsSep ":" without)}
+      bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local without ${lib.escapeShellArg (lib.concatStringsSep ":" without)}
     ''}
   '';
 

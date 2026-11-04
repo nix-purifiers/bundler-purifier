@@ -17,6 +17,7 @@
   purifier,
   # The source of Lobsters at its pinned commit (tests/dependencies).
   lobsters,
+  historicalRubySource,
 }:
 let
   inherit (pkgs) lib;
@@ -331,3 +332,14 @@ in
 // lib.optionalAttrs (!pkgs.stdenv.hostPlatform.isDarwin) {
   fixture-submodules = runsMain "fixture-submodules-runs" submodules ".purified{width:3px}";
 }
+
+// lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
+  import ./historical-toolchains.nix {
+    inherit
+      pkgs
+      historicalRubySource
+      build
+      cli
+      ;
+  }
+)

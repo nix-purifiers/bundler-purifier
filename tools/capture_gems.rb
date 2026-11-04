@@ -19,10 +19,10 @@ FileUtils.mkdir_p(output)
 provided = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_INPUT_VIEWS", "[]")).flat_map do |view|
   JSON.parse(File.read(view.fetch("catalog"))).fetch("packages").map { |entry| [entry.fetch("name"), entry.fetch("version")] }
 end
-owned = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).to_h do |archive|
+owned = Hash[JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).map do |archive|
   spec = Gem::Package.new(archive).spec
   [spec.name, spec.files]
-end
+end]
 roots = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_PROJECT_ROOTS", "[]"))
 if roots.empty?
   roots = Bundler.definition.dependencies.reject do |dependency|
@@ -31,7 +31,7 @@ if roots.empty?
 end
 roots -= ["bundler"]
 File.write(File.join(output, "roots.json"), JSON.dump(roots.sort) + "\n")
-specs = Bundler.load.specs.to_a.to_h { |spec| [spec.name, spec] }
+specs = Hash[Bundler.load.specs.to_a.map { |spec| [spec.name, spec] }]
 selected = {}
 visit = lambda do |name|
   return if selected.key?(name) || name == "bundler" || !specs.key?(name)
@@ -111,7 +111,7 @@ selected.values.each do |original|
     spec.require_paths = ["lib"] if spec.require_paths.empty?
     if native
       spec.platform = Gem::Platform.local
-      spec.required_ruby_version = Gem::Requirement.new("= #{RUBY_VERSION}")
+      spec.required_ruby_version = Gem::Requirement.new("= #{Gem.ruby_version}")
       spec.metadata = spec.metadata.merge("nix-purifier-ruby-engine" => RUBY_ENGINE,
                                          "nix-purifier-ruby-version" => RUBY_VERSION)
     end
