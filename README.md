@@ -164,9 +164,10 @@ and compiler. Pass the same `ruby` and `nativeBuildInputs` to a pure build.
 
 The historical fixture tests Ruby 2.5.8, Bundler 1.17.3 and JSON 1.8.6 on
 x86_64 Linux, including compilation and execution of JSON's C extension,
-projection and ordinary RubyGems local/archive installation. Historical
-RubyGems 3.1.2 registry-index resolution and incoming Nix composition remain separate
-checks to extend. Native capture preserves
+projection and ordinary RubyGems local/archive installation. The historical native Bundler input check also binds an unreachable ordinary
+source to the Nix-provided graph, installs it offline and executes the compiled
+JSON extension. Historical RubyGems 3.1.2 registry-index resolution and CLI
+input publication remain separate checks to extend. Native capture preserves
 RubyGems' own interpreter version requirement, including patchlevels on
 older RubyGems. These are specific tested versions, not an assertion about
 every intervening release, earlier Ruby or Bundler versions, other

@@ -51,6 +51,26 @@ module PurifierGemInputs
     end
   end
 
+  # Bundler 1.x has no local! or local file-source index. Feed the same
+  # native archive specifications through its cached source interface.
+  module LegacyRepositorySpecs
+    def cached_specs
+      @purifier_legacy_cached_specs ||= super.tap do |index|
+        remotes.each do |remote|
+          next unless remote.scheme == "file"
+          directory = File.join(URI::DEFAULT_PARSER.unescape(remote.path), "gems")
+          caches << Pathname.new(directory) unless caches.include?(Pathname.new(directory))
+          Dir[File.join(directory, "*.gem")].sort.each do |archive|
+            spec = Bundler.rubygems.spec_from_gem(archive)
+            next unless PACKAGES.key?(spec.name)
+            spec.source = self
+            index << spec
+          end
+        end
+      end
+    end
+  end
+
   module Runtime
     def setup(*arguments)
       result = super
@@ -70,16 +90,20 @@ module PurifierGemInputs
       if intrinsics.any?
         source = @sources.add_rubygems_source("remotes" => [])
         source.extend(IntrinsicSpecs)
-        source.local!
+        source.local! if source.respond_to?(:local!)
       end
       PACKAGES.values.reject { |package| package["intrinsic"] }.map { |package| package.fetch("repository") }.uniq.each do |repository|
         source = @sources.add_rubygems_source("remotes" => repository)
-        source.local!
+        if source.respond_to?(:local!)
+          source.local!
+        else
+          source.extend(LegacyRepositorySpecs)
+        end
         source.cached! unless ENV["BUNDLER_PURIFIER_RUNTIME"] == "1"
       end
       lockfile, unlock = arguments
       if unlock != true && lockfile && File.file?(lockfile)
-        changed = Bundler::LockfileParser.new(File.read(lockfile)).specs.filter_map do |spec|
+        changed = Bundler::LockfileParser.new(File.read(lockfile)).specs.map do |spec|
           package = PACKAGES[spec.name]
           next unless package
           source = spec.source
@@ -87,15 +111,23 @@ module PurifierGemInputs
             (package["intrinsic"] ? source.remotes.empty? : source.remotes.any? { |remote| remote.to_s.delete_suffix("/") == package.fetch("repository").delete_suffix("/") })
           spec.name unless spec.version.to_s == package.fetch("version") && same_source
         end
+        changed.compact!
         unlock = (unlock || {}).dup
         unlock[:gems] = (Array(unlock[:gems]) + changed).uniq
         arguments[1] = unlock
       end
       definition = super(*arguments)
+      unless defined?(Bundler::SourceMap)
+        definition.send(:sources).rubygems_sources.each do |source|
+          next unless source.remotes.any? { |remote| remote.scheme == "file" }
+          source.extend(LegacyRepositorySpecs)
+          source.cached! unless ENV["BUNDLER_PURIFIER_RUNTIME"] == "1"
+        end
+      end
       if intrinsics.any?
-        definition.sources.rubygems_sources.select { |source| source.remotes.empty? }.each do |source|
+        definition.send(:sources).rubygems_sources.select { |source| source.remotes.empty? }.each do |source|
           source.extend(IntrinsicSpecs)
-          source.local!
+          source.local! if source.respond_to?(:local!)
         end
       end
       definition
@@ -128,7 +160,19 @@ Bundler::Dependency.prepend(PurifierGemInputs::Requirements)
 Gem::Specification.prepend(PurifierGemInputs::ProjectDependencies)
 Bundler::Runtime.prepend(PurifierGemInputs::Runtime)
 Bundler::Dsl.prepend(PurifierGemInputs::Dsl)
-Bundler::SourceMap.prepend(PurifierGemInputs::SourceMap)
+if defined?(Bundler::SourceMap)
+  Bundler::SourceMap.prepend(PurifierGemInputs::SourceMap)
+else
+  # Bundler 1.x passes the equivalent mapping directly from Definition.
+  module PurifierGemInputs::LegacySourceRequirements
+    def source_requirements
+      super.merge(PurifierGemInputs::PACKAGES.transform_values do |package|
+        PurifierGemInputs.source_for(sources, package)
+      end)
+    end
+  end
+  Bundler::Definition.prepend(PurifierGemInputs::LegacySourceRequirements)
+end
 
 # Native add/remove must edit the user's Gemfile, rather than the lent facade.
 require "bundler/injector"
