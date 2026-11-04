@@ -16,9 +16,9 @@ end
 
 output = File.expand_path(ARGV.fetch(0))
 FileUtils.mkdir_p(output)
-provided = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_INPUT_VIEWS", "[]")).flat_map do |view|
+provided = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_INPUT_VIEWS", "[]")).map do |view|
   JSON.parse(File.read(view.fetch("catalog"))).fetch("packages").map { |entry| [entry.fetch("name"), entry.fetch("version")] }
-end
+end.flatten(1)
 owned = Hash[JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).map do |archive|
   spec = Gem::Package.new(archive).spec
   [spec.name, spec.files]
@@ -26,11 +26,11 @@ end]
 roots = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_PROJECT_ROOTS", "[]"))
 if roots.empty?
   roots = Bundler.definition.dependencies.reject do |dependency|
-    dependency.groups.all? { |group| %i[development test doc].include?(group) }
+    dependency.groups.all? { |group| [:development, :test, :doc].include?(group) }
   end.map(&:name)
 end
 roots -= ["bundler"]
-File.write(File.join(output, "roots.json"), JSON.dump(roots.sort) + "\n")
+File.open(File.join(output, "roots.json"), "wb") { |file| file.write(JSON.dump(roots.sort) + "\n") }
 specs = Hash[Bundler.load.specs.to_a.map { |spec| [spec.name, spec] }]
 selected = {}
 visit = lambda do |name|
@@ -58,7 +58,7 @@ selected.values.each do |original|
       path.start_with?("/") || path == "." || path.split("/").include?("..")
     end
     files += Dir.chdir(source) do
-      runtime_paths.flat_map { |path| Dir.glob(File.join(path, "**", "*"), File::FNM_DOTMATCH) }
+      runtime_paths.map { |path| Dir.glob(File.join(path, "**", "*"), File::FNM_DOTMATCH) }.flatten(1)
     end
     files.uniq.each do |relative|
       next if relative.start_with?("/") || (relative.split("/") & ["..", ".git"]).any?
@@ -73,22 +73,22 @@ selected.values.each do |original|
       # than the otherwise empty gems/<name>/lib tree.
       original.files.grep(/\.(rb|so|bundle|dll)$/).each do |relative|
         roots = [RbConfig::CONFIG.fetch("rubylibdir"), RbConfig::CONFIG.fetch("archdir")]
-        inputs = roots.flat_map do |root|
+        inputs = roots.map do |root|
           exact = File.join(root, relative)
           File.file?(exact) ? [exact] : Dir.glob(File.join(root, "**", relative))
-        end.uniq
+        end.flatten(1).uniq
         inputs.each do |input|
           sdk_root = roots.find { |root| input.start_with?(root + "/") }
-          target = File.join(directory, "lib", input.delete_prefix(sdk_root + "/"))
+          target = File.join(directory, "lib", input.sub(/\A#{Regexp.escape(sdk_root + "/")}/, ""))
           FileUtils.mkdir_p(File.dirname(target))
           copy_runtime_file(input, target)
         end
       end
       original.extensions.each do |extension|
-        prefix = extension.delete_prefix("ext/").delete_suffix("/extconf.rb")
+        prefix = extension.sub(/\Aext\//, "").sub(/\/extconf\.rb\z/, "")
         arch = RbConfig::CONFIG.fetch("archdir")
         Dir.glob([File.join(arch, prefix + ".{so,bundle,dll}"), File.join(arch, prefix, "**", "*.{so,bundle,dll}")]).each do |input|
-          target = File.join(directory, "lib", input.delete_prefix(arch + "/"))
+          target = File.join(directory, "lib", input.sub(/\A#{Regexp.escape(arch + "/")}/, ""))
           FileUtils.mkdir_p(File.dirname(target))
           copy_runtime_file(input, target)
         end
@@ -98,7 +98,7 @@ selected.values.each do |original|
     if File.directory?(original.extension_dir)
       Dir.glob(File.join(original.extension_dir, "**", "*"), File::FNM_DOTMATCH).each do |input|
         next unless File.file?(input)
-        relative = input.delete_prefix(original.extension_dir + "/")
+        relative = input.sub(/\A#{Regexp.escape(original.extension_dir + "/")}/, "")
         next if relative == "gem.build_complete"
         target = File.join(directory, "lib", relative)
         FileUtils.mkdir_p(File.dirname(target))
@@ -111,8 +111,16 @@ selected.values.each do |original|
     spec.require_paths = ["lib"] if spec.require_paths.empty?
     if native
       spec.platform = Gem::Platform.local
-      spec.required_ruby_version = Gem::Requirement.new("= #{Gem.ruby_version}")
-      spec.metadata = spec.metadata.merge("nix-purifier-ruby-engine" => RUBY_ENGINE,
+      # Legacy installers include patchlevel in Gem.ruby_version, while
+      # resolver APIs can use bare RUBY_VERSION for the same release point.
+      # Retain exact preview requirements until their ABI is tested separately.
+      spec.required_ruby_version = if Gem.ruby_version.prerelease?
+        Gem::Requirement.new("= #{Gem.ruby_version}")
+      else
+        next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
+        Gem::Requirement.new(">= #{RUBY_VERSION}", "< #{next_release}")
+      end
+      spec.metadata = spec.metadata.merge("nix-purifier-ruby-engine" => (defined?(RUBY_ENGINE) ? RUBY_ENGINE : "ruby"),
                                          "nix-purifier-ruby-version" => RUBY_VERSION)
     end
     spec.cert_chain = []
@@ -124,6 +132,6 @@ selected.values.each do |original|
     archives << filename
   end
 end
-File.write(File.join(output, "archives.json"), JSON.dump(archives.sort) + "\n")
+File.open(File.join(output, "archives.json"), "wb") { |file| file.write(JSON.dump(archives.sort) + "\n") }
 
-File.write(File.join(output, "intrinsics.json"), JSON.dump(intrinsics.sort_by { |entry| entry.fetch("name") }) + "\n")
+File.open(File.join(output, "intrinsics.json"), "wb") { |file| file.write(JSON.dump(intrinsics.sort_by { |entry| entry.fetch("name") }) + "\n") }

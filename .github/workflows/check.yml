@@ -63,3 +63,10 @@ jobs:
             .#checks.x86_64-linux.historical-ruby-repository \
             .#checks.x86_64-linux.historical-ruby-release)
           python3 tests/historical-native.py "${historical[@]}"
+
+          mapfile -t ruby18 < <(nix build --no-link --print-out-paths \
+            .#checks.x86_64-linux.ruby18-cli \
+            .#checks.x86_64-linux.ruby18-sdk \
+            .#checks.x86_64-linux.ruby18-repository \
+            .#checks.x86_64-linux.ruby18-release)
+          python3 tests/historical-native.py "${ruby18[@]}" 1.8.7 ruby18

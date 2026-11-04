@@ -154,6 +154,23 @@
         "type": "github"
       }
     },
+    "older-ruby": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1456837857,
+        "narHash": "sha256-rw241C89ocMlDTYP9c2fAb06Yf4Khpjy5PRnoPEb/qQ=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "770822493e3962d795739fafd522e771bfe06e3d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "770822493e3962d795739fafd522e771bfe06e3d",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "caisson": "caisson",
@@ -161,6 +178,7 @@
         "historical-ruby": "historical-ruby",
         "lobsters": "lobsters",
         "nixpkgs": "nixpkgs",
+        "older-ruby": "older-ruby",
         "treefmt-nix": "treefmt-nix"
       }
     },
