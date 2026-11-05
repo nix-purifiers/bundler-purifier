@@ -17,5 +17,9 @@
     url = "github:NixOS/nixpkgs/1db42b7fe3878f3f5f7a4f2dc210772fd080e205";
     flake = false;
   };
+  inputs.older-ruby = {
+    url = "github:NixOS/nixpkgs/770822493e3962d795739fafd522e771bfe06e3d";
+    flake = false;
+  };
   outputs = { ... }: { };
 }

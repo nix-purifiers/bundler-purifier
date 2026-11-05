@@ -162,17 +162,36 @@ projectNativeBuildInputs = [ old.stdenv.cc ]; }`. The CLI keeps its helper
 Ruby while lock capture and child builds use the selected project Ruby
 and compiler. Pass the same `ruby` and `nativeBuildInputs` to a pure build.
 
-The historical fixture tests Ruby 2.5.8, Bundler 1.17.3 and JSON 1.8.6 on
-x86_64 Linux, including compilation and execution of JSON's C extension,
-projection and ordinary RubyGems local/archive installation. The historical native Bundler input check also binds an unreachable ordinary
-source to the Nix-provided graph, installs it offline and executes the compiled
-JSON extension. Historical RubyGems 3.1.2 registry-index resolution and CLI
-input publication remain separate checks to extend. Native capture preserves
-RubyGems' own interpreter version requirement, including patchlevels on
-older RubyGems. These are specific tested versions, not an assertion about
-every intervening release, earlier Ruby or Bundler versions, other
-architectures or preview SDKs. The shared projector candidate is pinned
-explicitly in `flake.lock` (purifier PR #6).
+The historical C-extension fixtures use Bundler 1.17.3 and JSON 1.8.6 on
+x86_64 Linux, with these independently selected components:
+
+| Project Ruby | RubyGems codec | Compiler | Index helper |
+| --- | --- | --- | --- |
+| 1.8.7p374 | 2.6.14 | GCC 4.8.3 | Ruby 3.4.11 |
+| 2.5.8p224 | 3.1.2 | GCC 9.2.0 | Project Ruby |
+
+Checks cover compilation and execution of JSON's C extension, native lock
+capture, SDK/compiler propagation, prefetch/offline execution, publication
+matching pure native release bytes, and ordinary registry-index resolution,
+installation and execution of projected compiled gems. Historical native
+checks use the C locale so old glibc does not read a newer host locale archive.
+Native package creation uses RubyGems' package API on codecs without
+`gem build --output`.
+
+The CLI keeps its helper Ruby independent of these project SDKs. `indexRuby`
+can select an independent native index encoder; MRI 1.8 defaults to the
+available Ruby 3.4 helper. The shared legacy codec candidate (purifier PR #7)
+is pinned explicitly in `flake.lock`, without changing the public input URL.
+It backports reproducible package metadata while retaining native encoding.
+Stable native gem requirements accept both RubyGems' patchlevel representation
+and the resolver's bare representation of the same Ruby release point.
+Existing exact preview requirements remain unchanged.
+
+The Ruby 2.5 native input check also binds an unreachable ordinary source to
+a Nix-provided graph, installs it offline and executes the compiled extension.
+Incoming Nix composition on Ruby 1.8, earlier SDK/manager epochs, other
+architectures and preview SDKs remain further checks. These are exact tested
+points and operations; they do not establish an intervening version interval.
 
 ### An external build
 
