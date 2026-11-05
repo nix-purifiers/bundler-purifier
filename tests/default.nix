@@ -18,6 +18,7 @@
   # The source of Lobsters at its pinned commit (tests/dependencies).
   lobsters,
   historicalRubySource,
+  olderRubySource,
 }:
 let
   inherit (pkgs) lib;
@@ -341,5 +342,41 @@ in
       build
       cli
       ;
+  }
+)
+
+// lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
+  let
+    native = import ./ruby18-sdk.nix { inherit pkgs olderRubySource; };
+    project = build {
+      src = ./fixtures/ruby18;
+      ruby = native.sdk;
+      nativeBuildInputs = [ native.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+  in
+  {
+    ruby18-sdk = native.sdk;
+    ruby18-cli = cli.override {
+      projectRuby = native.sdk;
+      projectNativeBuildInputs = [ native.compiler ];
+    };
+    ruby18-release = project.release;
+    ruby18-ordinary-consumer =
+      pkgs.runCommand "ruby187-ordinary-compiled-consumer"
+        {
+          nativeBuildInputs = [ native.sdk ];
+        }
+        ''
+          export HOME=$TMPDIR GEM_HOME=$TMPDIR/gems GEM_PATH=$TMPDIR/gems
+          repository=${project.release.projections.rubygems}
+          gem install --local --no-document "$repository"/gems/json-*.gem
+          gem install --local --no-document "$repository"/gems/historical_greeting-*.gem
+          ruby -e 'require "historical_greeting"; abort unless RUBY_VERSION == "1.8.7"; abort unless HistoricalGreeting.answer == 42; abort unless $LOADED_FEATURES.any? { |path| path =~ /json\/ext\/parser\.so$/ }; abort unless Gem.loaded_specs.fetch("json").full_gem_path.start_with?(ENV.fetch("GEM_HOME") + "/")'
+          touch $out
+        '';
+    ruby18-app = project.packages.app;
+    ruby18-native-extension = project.tests;
+    ruby18-repository = project.release.projections.rubygems;
   }
 )

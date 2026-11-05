@@ -58,6 +58,7 @@
             checks = import ../../../tests {
               inherit pkgs;
               historicalRubySource = inputs.historical-ruby;
+              olderRubySource = inputs.older-ruby;
               sharedTools = closure-lib.purifier.projectInputsTool;
               purifier = closure-lib.purifier;
               overlay = self.overlays.default;

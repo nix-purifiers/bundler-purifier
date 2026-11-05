@@ -10,10 +10,11 @@ import subprocess
 import sys
 import tempfile
 import threading
-import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-cli, tools, repository, release = map(Path, sys.argv[1:])
+cli, tools, repository, release = map(Path, sys.argv[1:5])
+expected_ruby = sys.argv[5] if len(sys.argv) > 5 else '2.5.8'
+fixture = sys.argv[6] if len(sys.argv) > 6 else 'historical-ruby'
 
 def run(command, cwd, env):
     result = subprocess.run(list(map(str, command)), cwd=cwd, env=env,
@@ -25,22 +26,31 @@ def run(command, cwd, env):
 with tempfile.TemporaryDirectory(prefix='bundler117-native-') as temporary:
     work = Path(temporary)
     project = work / 'project'
-    shutil.copytree(ROOT / 'tests/fixtures/historical-ruby', project)
+    shutil.copytree(ROOT / 'tests/fixtures' / fixture, project)
     original = {p.relative_to(project): p.read_bytes() for p in project.rglob('*') if p.is_file()}
-    environment = dict(os.environ, PATH=f'{tools}/bin:' + os.environ['PATH'],
+    home = work / 'home'
+    home.mkdir()
+    environment = dict(os.environ, HOME=str(home), LC_ALL="C", PATH=f'{tools}/bin:' + os.environ['PATH'],
                        BUNDLE_USER_HOME=str(work / 'bundle-home'))
     environment.pop('GEM_HOME', None)
     environment.pop('GEM_PATH', None)
-    assert run([tools / 'bin/ruby', '-e', 'print RUBY_VERSION'], project, environment) == '2.5.8'
+    assert run([tools / 'bin/ruby', '-e', 'print RUBY_VERSION'], project, environment) == expected_ruby
     assert '1.17.3' in run([tools / 'bin/bundle', '--version'], project, environment)
+    patchlevel = {'1.8.7': '374', '2.5.8': '224'}[expected_ruby]
+    assert run([tools / 'bin/ruby', '-e', 'print RUBY_PATCHLEVEL'], project, environment) == patchlevel
+    gem_version = {'1.8.7': '2.6.14', '2.5.8': '3.1.2'}[expected_ruby]
+    assert run([tools / 'bin/ruby', '-e', 'require "rubygems"; print Gem::VERSION'], project, environment) == gem_version
     command = cli / 'bin/bundler-purifier'
     run([command, 'lock', '--force'], project, environment)
     assert (project / 'Gemfile.lock').read_bytes() == original[Path('Gemfile.lock')]
     captured = json.loads((project / 'bundler-purifier.lock.json').read_text())
-    assert captured['ruby'] == '2.5.8'
+    assert captured['ruby'] == expected_ruby
     assert captured['bundlerHash'] == json.loads(original[Path('bundler-purifier.lock.json')])['bundlerHash']
     run([command, 'prefetch'], project, environment)
-    assert run([cli / 'bin/bundle', 'exec', 'ruby', '-Ilib', 'exe/historical-greeting'], project, environment) == '42 on 2.5.8\n'
+    compiler = run([command, 'shell', 'gcc', '--version'], project, environment).splitlines()[0]
+    assert {'1.8.7': '4.8.', '2.5.8': '9.2.'}[expected_ruby] in compiler, compiler
+    print('Selected native compiler: ' + compiler, flush=True)
+    assert run([cli / 'bin/bundle', 'exec', 'ruby', '-Ilib', 'exe/historical-greeting'], project, environment) == '42 on ' + expected_ruby + '\n'
     print('PASS native lock, SDK/compiler propagation, prefetch and wrapper execution', flush=True)
     archives = {p.name: p.read_bytes() for p in (repository / 'gems').glob('*.gem')}
     native_archives = {p.name: p.read_bytes() for p in release.glob("*.gem")}
@@ -51,6 +61,10 @@ with tempfile.TemporaryDirectory(prefix='bundler117-native-') as temporary:
     class Registry(http.server.BaseHTTPRequestHandler):
         def log_message(self, *_):
             pass
+
+        def do_HEAD(self):
+            self.send_response(404)
+            self.end_headers()
 
         def do_GET(self):
             relative = self.path.lstrip('/')
@@ -77,6 +91,10 @@ with tempfile.TemporaryDirectory(prefix='bundler117-native-') as temporary:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     host = f'http://127.0.0.1:{server.server_port}'
     try:
+        credentials = home / '.gem' / 'credentials'
+        credentials.parent.mkdir(exist_ok=True)
+        credentials.write_text('---\n:rubygems_api_key: fixture-key\n')
+        credentials.chmod(0o600)
         publication = dict(environment, GEM_HOST_API_KEY='fixture-key')
         run([command, 'publish', '--host', host], project, publication)
         assert stored == native_archives
@@ -85,16 +103,12 @@ with tempfile.TemporaryDirectory(prefix='bundler117-native-') as temporary:
         home = work / 'ordinary'
         ordinary = dict(environment, GEM_HOME=str(home), GEM_PATH=str(home))
         # Use native gem directly: no purifier, Bundler plugin or build tools.
-        for name in ('json', 'historical_greeting'):
-            archive = next(key for key in archives if key.startswith(name + '-'))
-            with urllib.request.urlopen(host + '/gems/' + archive) as response:
-                downloaded = response.read()
-            assert downloaded == archives[archive]
-            target = work / archive
-            target.write_bytes(downloaded)
-            run([tools / 'bin/gem', 'install', '--local', '--no-document', target], work, ordinary)
-        assert run([tools / 'bin/ruby', '-rhistorical_greeting', '-e', 'print HistoricalGreeting.answer'], work, ordinary) == '42'
-        print('PASS ordinary HTTP consumer of projected compiled extension', flush=True)
+        root_archive = next(name for name in archives if name.startswith('historical_greeting-'))
+        version = root_archive[len('historical_greeting-'):].removesuffix('.gem')
+        run([tools / 'bin/gem', 'install', '--no-document', '--clear-sources', '--prerelease',
+             '--source', host, 'historical_greeting', '--version', version], work, ordinary)
+        assert run([tools / 'bin/ruby', '-e', r'require "historical_greeting"; abort unless $LOADED_FEATURES.any? { |path| path =~ /json\/ext\/parser\.so$/ }; abort unless Gem.loaded_specs.fetch("json").full_gem_path.start_with?(ENV.fetch("GEM_HOME") + "/"); print HistoricalGreeting.answer'], work, ordinary) == '42'
+        print('PASS ordinary registry-index resolution, install and execution of projected compiled extension', flush=True)
     finally:
         server.shutdown()
         server.server_close()

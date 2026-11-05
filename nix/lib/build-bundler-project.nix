@@ -93,6 +93,8 @@
   # The Ruby that runs Bundler. The default is nixpkgs' Ruby of the minor
   # version the lock was made with.
   ruby ? null,
+  # Keep index serialization independent of old native package codecs.
+  indexRuby ? null,
   # Build tools and libraries for gems with native extensions, which
   # compile in the `app` build, beyond the ones nixpkgs names for them
   # (`useGemConfig`). The libraries are on LD_LIBRARY_PATH in the shell
@@ -552,7 +554,7 @@ let
           ${prepareSource}
           ${gitRepositoryForGemspecs}
           cd ${lib.escapeShellArg gem.dir}
-          gem build ${lib.escapeShellArg (baseNameOf (gemspecOf gem))} --output ${lib.escapeShellArg fileName}
+          ruby -r ${purifier.rubygemsCodecCompatibility} ${integrationTools}/build_gem.rb ${lib.escapeShellArg (baseNameOf (gemspecOf gem))} ${lib.escapeShellArg fileName}
           runHook postBuild
         '';
         installPhase = ''
@@ -595,15 +597,25 @@ let
             ${
               if selectedInputs == [ ] then
                 ''
-                  ruby "$GEM_HOME/bin/bundle" exec ruby ${integrationTools}/capture_gems.rb "$out"
+                  ruby "$GEM_HOME/bin/bundle" exec ruby -r ${purifier.rubygemsCodecCompatibility} ${integrationTools}/capture_gems.rb "$out"
                 ''
               else
                 ''
                   export BUNDLER_PURIFIER_PERSISTENT_GEMFILE="$BUNDLE_GEMFILE"
-                  ruby ${integrationTools}/native_bundle_command.rb exec ruby ${integrationTools}/capture_gems.rb "$out"
+                  ruby ${integrationTools}/native_bundle_command.rb exec ruby -r ${purifier.rubygemsCodecCompatibility} ${integrationTools}/capture_gems.rb "$out"
                 ''
             }
       '';
+  indexRuby' =
+    if indexRuby != null then
+      indexRuby
+    else if lib.versionOlder lock.ruby "1.9" then
+      if ruby_3_4 != null then
+        ruby_3_4
+      else
+        throw "bundler-purifier: this native codec needs an independent index helper; pass indexRuby."
+    else
+      ruby';
   projectionFor =
     roots:
     purifier.rubygemsProjections {
@@ -612,6 +624,7 @@ let
       inherit dependencies runCommand roots;
       intrinsics = readJson "${capturedGems}/intrinsics.json";
       ruby = ruby';
+      indexRuby = indexRuby';
       name = "${name}-rubygems-repository";
     };
   projections = projectionFor (readJson "${capturedGems}/roots.json");
