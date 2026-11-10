@@ -35,9 +35,10 @@ module PurifierGemInputs
     sources.respond_to?(:rubygems_sources) ? sources.rubygems_sources : sources.select { |source| source.is_a?(Bundler::Source::Rubygems) }
   end
 
-  def self.add_rubygems_source(sources, remotes)
+  def self.add_rubygems_source(sources, remotes, intrinsic = false)
     return sources.add_rubygems_source("remotes" => remotes) if sources.respond_to?(:add_rubygems_source)
     candidate = Bundler::Source::Rubygems.new("remotes" => Array(remotes))
+    candidate.extend(IntrinsicSpecs) if intrinsic
     existing = sources.find { |source| source == candidate }
     existing || (sources << candidate; candidate)
   end
@@ -135,7 +136,7 @@ module PurifierGemInputs
         end
       end
       if intrinsics.any?
-        source = PurifierGemInputs.add_rubygems_source(@sources, [])
+        source = PurifierGemInputs.add_rubygems_source(@sources, [], true)
         source.extend(IntrinsicSpecs)
         source.local! if source.respond_to?(:local!)
       end
@@ -210,10 +211,11 @@ end
 if PurifierGemInputs::LEGACY_SOURCE_ARRAY
   module PurifierGemInputs::RepositoryIdentity
     def purifier_repository_identity
-      remotes.map { |remote| remote.to_s.sub(/\/$/, "") }
+      [is_a?(PurifierGemInputs::IntrinsicSpecs), remotes.map { |remote| remote.to_s.sub(/\/$/, "") }]
     end
 
     def purifier_nix_repository?
+      return true if is_a?(PurifierGemInputs::IntrinsicSpecs)
       remotes.any? do |remote|
         PurifierGemInputs::PACKAGES.values.any? do |package|
           !package["intrinsic"] && remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "")

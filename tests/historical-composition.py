@@ -106,6 +106,16 @@ forward = klass.new("remotes" => [repository, "https://ordinary-one.invalid/"])
 reverse = klass.new("remotes" => ["https://ordinary-one.invalid/", repository])
 abort "Nix remote priority discarded" if forward == reverse
 abort "hash identity mismatch" unless [nix,copy,ordinary,other,forward,reverse].uniq.size == 4
+intrinsic = klass.new("remotes" => []).extend(PurifierGemInputs::IntrinsicSpecs)
+intrinsic_copy = klass.new("remotes" => []).extend(PurifierGemInputs::IntrinsicSpecs)
+ordinary_empty = klass.new("remotes" => [])
+abort "intrinsic source collapsed" if intrinsic == ordinary_empty || ordinary_empty == intrinsic
+abort "intrinsic copy split" unless intrinsic == intrinsic_copy && intrinsic.hash == intrinsic_copy.hash
+abort "ordinary empty source merge changed" unless ordinary_empty == ordinary && ordinary_empty.hash == ordinary.hash
+sources = [ordinary_empty]
+added = PurifierGemInputs.add_rubygems_source(sources, [], true)
+abort "ordinary source reused for intrinsic" unless sources.size == 2 && !added.equal?(ordinary_empty)
+
 puts "SOURCE IDENTITY PASS"
 '''
         assert run('exec', 'ruby', '-e', identity).strip() == 'SOURCE IDENTITY PASS'
