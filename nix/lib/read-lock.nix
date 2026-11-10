@@ -28,7 +28,9 @@
 #   definitionHash  the hash of the Gemfile, Gemfile.lock and gemspecs it
 #                   was made from, to tell a stale lock
 #   ruby            the Ruby version the lock run used
-#   bundlerHash     the hash of the gem of the Bundler of BUNDLED WITH,
+#   bundlerVersion  the actual native SDK version, only when the native
+#                   lock predates BUNDLED WITH
+#   bundlerHash     the hash of the selected Bundler gem,
 #                   which CHECKSUMS never lists
 #   gemHashes       the hash of each gem file that CHECKSUMS does not list,
 #                   by file name

@@ -378,6 +378,7 @@ in
   in
   {
     ruby18-sdk = native.sdk;
+    ruby18-bundler117-gems = native.gems;
     ruby18-bundler116-sdk = native116.sdk;
     ruby18-bundler110-sdk = native110.sdk;
     ruby18-bundler136-sdk = native136.sdk;

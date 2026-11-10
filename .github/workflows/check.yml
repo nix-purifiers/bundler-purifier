@@ -77,17 +77,23 @@ jobs:
         if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
         run: |
-          for epoch in 110 116; do
+          for epoch in 110 116 136; do
+            extra=()
             case "$epoch" in
               110) version=1.10.6; hash='sha256-+ykz0SMEzsddrHW5OhywRdoCaykebGWwl0TOuQB2n+4=' ;;
               116) version=1.16.6; hash='sha256-B7RF6pjTkDLSVwFqlxoMCUdVbup4Vc5klw2iqC4JhgU=' ;;
+              136)
+                version=1.3.6; hash='sha256-K6aoziNnsuOCuWkeb7qAidtAu0u4gFTe0a3yYWy6El8='
+                higher=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-bundler117-gems)
+                extra=(--versionless --extra-gem-path "$higher/gems")
+                ;;
             esac
             mapfile -t sdk < <(nix build --no-link --print-out-paths \
               ".#checks.x86_64-linux.ruby18-bundler${epoch}-cli" \
               ".#checks.x86_64-linux.ruby18-bundler${epoch}-sdk")
             python3 tests/ruby18-incoming-native.py "${sdk[0]}" "${sdk[1]}" \
               --bundler-version "$version" --bundler-hash "$hash" \
-              --sdk-check "ruby18-bundler${epoch}-sdk" \
+              --sdk-check "ruby18-bundler${epoch}-sdk" "${extra[@]}" \
               --results "$RUNNER_TEMP/ruby18-incoming-${epoch}-evidence"
           done
 

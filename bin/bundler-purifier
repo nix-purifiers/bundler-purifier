@@ -27,6 +27,17 @@
 # (the shared nix-purifiers library) and BUNDLER_PURIFIER_NIXPKGS (the
 # nixpkgs it builds with).
 
+# This parser runs on the packaged helper Ruby. A consumer lock or GEM_PATH
+# must not activate its legacy Bundler inside this separate host process.
+require "rubygems"
+helper_bundler = Dir.glob(File.join(Gem.default_specifications_dir, "bundler-*.gemspec"))
+  .filter_map { |path| Gem::Specification.load(path) }.max_by(&:version)
+unless helper_bundler
+  helper_bundler = Gem::Specification.find_all_by_name("bundler")
+    .select { |spec| spec.full_gem_path.start_with?(Gem.default_dir + "/") }.max_by(&:version)
+end
+raise Gem::LoadError, "bundler-purifier: the helper Ruby must supply Bundler" unless helper_bundler
+gem "bundler", "= #{helper_bundler.version}"
 require "bundler"
 require "digest"
 require "fileutils"

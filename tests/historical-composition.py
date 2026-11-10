@@ -54,6 +54,7 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     # Require in the application body, after native Bundler's runtime setup.
     runtime = r'''require "historical_greeting"
 require "digest/sha2"
+abort "resolver scope leaked" if Thread.current[:purifier_definition_sources]
 abort "wrong native parser" unless JSON.parser == JSON::Ext::Parser
 puts "RUNTIME|#{RUBY_VERSION}|#{RUBY_PATCHLEVEL}|#{Gem::VERSION}|#{Bundler::VERSION}"
 puts "VALUE|#{HistoricalGreeting.answer}"
@@ -91,6 +92,23 @@ puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
         parsers = [member for member in payload if member.isfile() and member.name.endswith('json/ext/parser.so')]
         assert len(parsers) == 1
         assert hashlib.sha256(payload.extractfile(parsers[0]).read()).hexdigest() == native_hash
+    if versionless:
+        identity = r'''klass = Bundler::Source::Rubygems
+repository = PurifierGemInputs::PACKAGES.values.find { |package| !package["intrinsic"] }.fetch("repository")
+nix = klass.new("remotes" => [repository])
+copy = klass.new("remotes" => [repository])
+ordinary = klass.new("remotes" => ["https://ordinary-one.invalid/"])
+other = klass.new("remotes" => ["https://ordinary-two.invalid/"])
+abort "ordinary source merge changed" unless ordinary == other && ordinary.hash == other.hash
+abort "Nix source collapsed" if nix == ordinary || ordinary == nix
+abort "same Nix source split" unless nix == copy && nix.hash == copy.hash
+forward = klass.new("remotes" => [repository, "https://ordinary-one.invalid/"])
+reverse = klass.new("remotes" => ["https://ordinary-one.invalid/", repository])
+abort "Nix remote priority discarded" if forward == reverse
+abort "hash identity mismatch" unless [nix,copy,ordinary,other,forward,reverse].uniq.size == 4
+puts "SOURCE IDENTITY PASS"
+'''
+        assert run('exec', 'ruby', '-e', identity).strip() == 'SOURCE IDENTITY PASS'
     run('lock', '--local')
     assert (project / 'Gemfile.lock').read_bytes() == lock
 
