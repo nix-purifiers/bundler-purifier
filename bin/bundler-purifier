@@ -275,7 +275,7 @@ module BundlerPurifier
       config = Bundler::YAMLSerializer.load(File.read(project)).reject { |k, _| LOCK_RUN_IGNORED_SETTINGS.include?(k) }
     end
     FileUtils.mkdir_p(dir)
-    File.write(File.join(dir, "config"), Bundler::YAMLSerializer.dump(config))
+    File.write(File.join(dir, "config"), config.empty? ? "--- {}\n" : Bundler::YAMLSerializer.dump(config))
   end
 
   # Runs Bundler in the project with empty gem, user and cache directories,

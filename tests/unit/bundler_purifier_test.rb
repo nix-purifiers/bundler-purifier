@@ -207,6 +207,12 @@ class BundlerPurifierTest < Minitest::Test
     assert_nil BP.project_ruby_version("GEM\n  remote: https://rubygems.org/\n")
   end
 
+  def test_empty_lock_run_configuration_is_a_yaml_mapping
+    config_dir = File.join(@dir, "native-config")
+    BP.write_lock_run_config(config_dir)
+    assert_equal({}, YAML.load_file(File.join(config_dir, "config")))
+  end
+
   def test_lock_run_config_drops_the_settings_that_narrow_the_lock
     # A value with quotes in it, as Lobsters' sqlite3 flags have.
     write(".bundle/config", <<~YAML)
