@@ -331,7 +331,9 @@ in build {
         credentials.chmod(0o600)
         if registry_sdk_archives:
             (home / '.gemrc').write_text('---\n:sources:\n- ' + host + '\n')
-        publication = dict(env, GEM_HOST_API_KEY='fixture-key')
+        local_registry_env = {key: value for key, value in env.items()
+                              if key.lower() not in ('http_proxy', 'https_proxy', 'all_proxy')}
+        publication = dict(local_registry_env, GEM_HOST_API_KEY='fixture-key')
         proxy_flags = ['--no-http-proxy'] if registry_sdk_archives else []
         publish = [command, 'publish', '--host', host, *proxy_flags]
         run('publish-projected', publish, project, publication)
@@ -343,7 +345,7 @@ in build {
         assert len(uploads) == count
         ordinary = work / 'ordinary'
         ordinary.mkdir()
-        ordinary_env = dict(env, GEM_HOME=str(ordinary / 'gems'), GEM_PATH=str(ordinary / 'gems'))
+        ordinary_env = dict(local_registry_env, GEM_HOME=str(ordinary / 'gems'), GEM_PATH=str(ordinary / 'gems'))
         root_archive = next(name for name in archives if name.startswith('incoming_consumer-'))
         version = root_archive[len('incoming_consumer-'):-len('.gem')]
         gem_help = run('native-gem-install-help', [args.sdk / 'bin/gem', 'help', 'install'], ordinary, ordinary_env)
