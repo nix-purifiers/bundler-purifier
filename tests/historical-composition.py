@@ -14,6 +14,8 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 tools, repository, catalog = map(Path, sys.argv[1:4])
 expected_ruby = sys.argv[4] if len(sys.argv) > 4 else '2.5.8'
+expected_bundler = sys.argv[5] if len(sys.argv) > 5 else '1.17.3'
+extra_gem_path = sys.argv[6] if len(sys.argv) > 6 else ''
 patchlevel, gem_version = {'1.8.7': (374, '2.6.14'), '2.5.8': (224, '3.1.2')}[expected_ruby]
 with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     project = Path(temporary)
@@ -21,10 +23,10 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     (project / 'Gemfile').write_text(manifest)
     environment = dict(os.environ, HOME=str(project),
         PATH=str(tools / 'bin') + ':' + os.environ['PATH'],
-        GEM_HOME=str(project / 'gems'), GEM_PATH=str(tools / 'gems'),
+        GEM_HOME=str(project / 'gems'), GEM_PATH=str(tools / 'gems') + (':' + extra_gem_path if extra_gem_path else ''),
         BUNDLE_PATH=str(project / 'vendor/bundle'), BUNDLE_USER_HOME=str(project / 'bundle-home'),
         BUNDLER_PURIFIER_INPUT_VIEWS=json.dumps([dict(repository=str(repository), catalog=str(catalog))]),
-        BUNDLER_PURIFIER_BUNDLER_VERSION='1.17.3', BUNDLER_PURIFIER_PERSIST_LOCK='1')
+        BUNDLER_PURIFIER_BUNDLER_VERSION=expected_bundler, BUNDLER_PURIFIER_PERSIST_LOCK='1')
 
     def run(*arguments, views=None, succeeds=True):
         env = dict(environment)
@@ -41,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     entries = json.loads(catalog.read_text())['packages']
     for entry in entries:
         assert entry['version'].encode() in lock
-    assert b'1.17.3' in lock
+    assert ('BUNDLED WITH\n   ' + expected_bundler).encode() in lock
     run('lock', '--local')
     assert (project / 'Gemfile.lock').read_bytes() == lock
     run('install', '--local')
@@ -66,7 +68,7 @@ puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
 '''
     output = run('exec', 'ruby', '-e', runtime)
     lines = output.splitlines()
-    assert f'RUNTIME|{expected_ruby}|{patchlevel}|{gem_version}|1.17.3' in lines, output
+    assert f'RUNTIME|{expected_ruby}|{patchlevel}|{gem_version}|{expected_bundler}' in lines, output
     assert 'VALUE|42' in lines, output
     selected = {line.split('|')[1]: line.split('|')[2:] for line in lines if line.startswith('GEM|')}
     for entry in entries:
@@ -102,4 +104,4 @@ puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
     assert 'conflicting Nix inputs' in failure
     assert (project / 'Gemfile.lock').read_bytes() == lock
     assert not list(project.glob('.bundler-purifier-*.Gemfile*'))
-    print(f'PASS Ruby{expected_ruby}/Bundler1.17: native input binding, installed projected versions, live compiled origin/archive SHA, unchanged manifest/lock and negative controls')
+    print(f'PASS Ruby{expected_ruby}/Bundler{expected_bundler}: native input binding, installed projected versions, live compiled origin/archive SHA, unchanged manifest/lock and negative controls')

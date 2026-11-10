@@ -19,6 +19,9 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('cli', type=Path)
 parser.add_argument('sdk', type=Path)
 parser.add_argument('--results', type=Path)
+parser.add_argument('--bundler-version', default='1.17.3')
+parser.add_argument('--bundler-hash', default='sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I=')
+parser.add_argument('--sdk-check', default='ruby18-sdk')
 args = parser.parse_args()
 work = args.results.resolve() if args.results else Path(tempfile.mkdtemp(prefix='ruby18-incoming-'))
 work.mkdir(parents=True, exist_ok=args.results is None)
@@ -82,7 +85,7 @@ try:
     versions = run('native-versions', [args.sdk / 'bin/ruby', '-e',
         'require "bundler"; puts [RUBY_VERSION,RUBY_PATCHLEVEL,Gem::VERSION,Bundler::VERSION,Gem.ruby,RbConfig::CONFIG.fetch("prefix")].join("|")'])
     version_fields = versions.strip().split('|')
-    assert version_fields[:4] == ['1.8.7', '374', '2.6.14', '1.17.3'], versions
+    assert version_fields[:4] == ['1.8.7', '374', '2.6.14', args.bundler_version], versions
     actual_ruby, actual_prefix = version_fields[4:]
     assert Path(actual_ruby).is_file()
     receipt['actualRubyExecutableSha256'] = hashlib.sha256(Path(actual_ruby).read_bytes()).hexdigest()
@@ -146,8 +149,8 @@ end
     lock_bytes = (project / 'bundler-purifier.lock.json').read_bytes()
     captured = json.loads(lock_bytes)
     assert captured['ruby'] == '1.8.7'
-    assert b'BUNDLED WITH\n   1.17.3' in native_lock
-    assert captured['bundlerHash'] == 'sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I='
+    assert ('BUNDLED WITH\n   ' + args.bundler_version).encode() in native_lock
+    assert captured['bundlerHash'] == args.bundler_hash
     assert len(captured['projectInputs']) == 1 and not captured.get('gemHashes')
     assert 'narHash' in json.dumps(captured['projectInputs'])
     run('relock', [command, 'lock', '--force'], project)
@@ -160,7 +163,7 @@ end
     receipt['captureRegistryStoppedBeforeOfflineExecution'] = True
     code = 'require "incoming_consumer"; abort unless IncomingConsumer.answer==42; puts "INCOMING|#{RUBY_VERSION}|#{Gem::VERSION}|#{Bundler::VERSION}|42"'
     output = run('wrapper-runtime', [args.cli / 'bin/bundle', 'exec', 'ruby', '-Ilib', '-e', code], project)
-    assert output == 'INCOMING|1.8.7|2.6.14|1.17.3|42\n', output
+    assert output == f'INCOMING|1.8.7|2.6.14|{args.bundler_version}|42\n', output
     expression = work / 'consumer.nix'
     expression.write_text('''let
   f = builtins.getFlake "path:''' + source + '''";
@@ -171,7 +174,7 @@ end
   };
 in build {
   src = builtins.toPath ''' + json.dumps(str(project)) + ''';
-  ruby = f.checks.x86_64-linux.ruby18-sdk;
+  ruby = f.checks.x86_64-linux.''' + args.sdk_check + ''';
   checkCommand = "bundle exec ruby -Ilib -e 'require %q(incoming_consumer); abort unless IncomingConsumer.answer == 42'";
 }
 ''')

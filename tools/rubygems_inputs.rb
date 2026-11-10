@@ -200,7 +200,16 @@ else
   # Bundler 1.x passes the equivalent mapping directly from Definition.
   module PurifierGemInputs::LegacySourceRequirements
     def source_requirements
-      super.merge(PurifierGemInputs.source_requirements(PurifierGemInputs::PACKAGES, sources))
+      requirements = super
+      provided = PurifierGemInputs.source_requirements(PurifierGemInputs::PACKAGES, sources)
+      # Earlier resolvers consume native indexes; later ones announce a
+      # :default source and consume source objects instead.
+      unless requirements.key?(:default)
+        indexes = {}
+        provided.each { |name, source| indexes[name] = source.specs }
+        provided = indexes
+      end
+      requirements.merge(provided)
     end
   end
   PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::LegacySourceRequirements)
@@ -239,7 +248,8 @@ end
 require "bundler/match_platform"
 PurifierGemInputs.install_patch(Bundler::MatchPlatform, PurifierGemInputs::Platforms)
 
-require "bundler/resolver/spec_group"
+require "bundler/resolver"
+require "bundler/resolver/spec_group" unless defined?(Bundler::Resolver::SpecGroup)
 module PurifierGemInputs::ResolverDependencies
   def dependencies
     super.map do |dependency|

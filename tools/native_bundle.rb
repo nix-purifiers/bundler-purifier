@@ -6,6 +6,14 @@ require "fileutils"
 require "uri"
 
 module PurifierNativeBundle
+  # Selecting an executable does not activate its gem in a new Ruby
+  # process. Activate before loading it so another visible Bundler cannot
+  # silently replace the requested native SDK.
+  def self.bundle_command(ruby, bundle, arguments)
+    bootstrap = 'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); $0 = ARGV.shift; load $0'
+    [ruby, "-e", bootstrap, bundle] + arguments
+  end
+
   # Ruby 1.8 has neither keyword arguments nor system's environment/chdir
   # options. Keep those changes in the child, as modern system does.
   def self.native_system(environment, arguments, options)
@@ -30,7 +38,7 @@ module PurifierNativeBundle
     persist_lock = options.fetch(:persist_lock, false)
     env = options.fetch(:env, {})
     working_directory = ENV.fetch("BUNDLER_PURIFIER_WORKING_DIRECTORY", root)
-    return native_system(env, [ruby, bundle] + arguments, :chdir => working_directory) if views.empty?
+    return native_system(env, bundle_command(ruby, bundle, arguments), :chdir => working_directory) if views.empty?
 
     command = arguments.find { |argument| !argument.start_with?("-") }
     env = env.merge("BUNDLER_PURIFIER_RUNTIME" => %w[exec console].include?(command) ? "1" : "0")
@@ -54,7 +62,7 @@ module PurifierNativeBundle
     if (persistent = ENV["BUNDLER_PURIFIER_PERSISTENT_GEMFILE"])
       native_env = env.merge("BUNDLE_GEMFILE" => persistent,
                              "BUNDLER_PURIFIER_INPUT_DATA" => input_data)
-      return native_system(native_env, [ruby, bundle] + arguments, :chdir => working_directory)
+      return native_system(native_env, bundle_command(ruby, bundle, arguments), :chdir => working_directory)
     end
     manifest = File.join(root, "Gemfile")
     original_lock = manifest + ".lock"
@@ -78,10 +86,10 @@ module PurifierNativeBundle
           (package["intrinsic"] ? !source.remotes.empty? : !source.remotes.any? { |remote| remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "") })
       end
       if needs_binding
-        return false unless native_system(native_env, [ruby, bundle, "lock", "--local"], :chdir => root, :out => STDERR)
+        return false unless native_system(native_env, bundle_command(ruby, bundle, ["lock", "--local"]), :chdir => root, :out => STDERR)
       end
     end
-    result = native_system(native_env, [ruby, bundle] + arguments, :chdir => working_directory)
+    result = native_system(native_env, bundle_command(ruby, bundle, arguments), :chdir => working_directory)
     FileUtils.cp(facade_lock, original_lock) if result && persist_lock && File.file?(facade_lock)
     result
   ensure
