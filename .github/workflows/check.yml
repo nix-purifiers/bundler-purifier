@@ -70,3 +70,39 @@ jobs:
             .#checks.x86_64-linux.ruby18-repository \
             .#checks.x86_64-linux.ruby18-release)
           python3 tests/historical-native.py "${ruby18[@]}" 1.8.7 ruby18
+          python3 tests/ruby18-incoming-native.py "${ruby18[0]}" "${ruby18[1]}" \
+            --results "$RUNNER_TEMP/ruby18-incoming-evidence"
+
+      - name: Exercise earlier native Bundler resolver epochs
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        shell: bash
+        run: |
+          for epoch in 110 116; do
+            case "$epoch" in
+              110) version=1.10.6; hash='sha256-+ykz0SMEzsddrHW5OhywRdoCaykebGWwl0TOuQB2n+4=' ;;
+              116) version=1.16.6; hash='sha256-B7RF6pjTkDLSVwFqlxoMCUdVbup4Vc5klw2iqC4JhgU=' ;;
+            esac
+            mapfile -t sdk < <(nix build --no-link --print-out-paths \
+              ".#checks.x86_64-linux.ruby18-bundler${epoch}-cli" \
+              ".#checks.x86_64-linux.ruby18-bundler${epoch}-sdk")
+            python3 tests/ruby18-incoming-native.py "${sdk[0]}" "${sdk[1]}" \
+              --bundler-version "$version" --bundler-hash "$hash" \
+              --sdk-check "ruby18-bundler${epoch}-sdk" \
+              --results "$RUNNER_TEMP/ruby18-incoming-${epoch}-evidence"
+          done
+
+      - name: Retain historical incoming composition receipts
+        if: always() && runner.os == 'Linux' && runner.arch == 'X64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ruby18-incoming-composition
+          path: |
+            ${{ runner.temp }}/ruby18-incoming*-evidence/receipt.json
+            ${{ runner.temp }}/ruby18-incoming*-evidence/logs/*
+            ${{ runner.temp }}/ruby18-incoming*-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby18-incoming*-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby18-incoming*-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby18-incoming*-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby18-incoming*-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby18-incoming*-evidence/consumer.nix
+          if-no-files-found: ignore

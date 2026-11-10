@@ -472,6 +472,13 @@ let
         # The locked Bundler, for the `bundle` wrapper to run the app with.
         gem install --local --no-document --install-dir .bundle/purifier/bundler \
           vendor/cache/bundler-${lock.bundler}.gem
+        # Older Bundler gems mark ERB executable templates as executable.
+        # They are generator data, not scripts for fixup to interpret.
+        for template in .bundle/purifier/bundler/gems/bundler-*/lib/bundler/templates/Executable*; do
+          if [ -f "$template" ]; then
+            chmod a-x "$template"
+          fi
+        done
         # The gem cache served the install; the output keeps the installed
         # bundle under vendor/bundle. The repository for the gemspecs goes.
         rm -rf vendor/cache

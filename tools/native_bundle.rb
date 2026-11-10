@@ -3,40 +3,72 @@
 require "json"
 require "tempfile"
 require "fileutils"
+require "uri"
 
 module PurifierNativeBundle
-  def self.run(arguments, root:, views:, ruby:, bundle:, persist_lock: false, env: {})
+  # Selecting an executable does not activate its gem in a new Ruby
+  # process. Activate before loading it so another visible Bundler cannot
+  # silently replace the requested native SDK.
+  def self.bundle_command(ruby, bundle, arguments)
+    bootstrap = 'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); $0 = ARGV.shift; load $0'
+    [ruby, "-e", bootstrap, bundle] + arguments
+  end
+
+  # Ruby 1.8 has neither keyword arguments nor system's environment/chdir
+  # options. Keep those changes in the child, as modern system does.
+  def self.native_system(environment, arguments, options)
+    return system(*([environment] + arguments + [options])) if defined?(Process.spawn)
+    child = fork do
+      begin
+        environment.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+        Dir.chdir(options[:chdir]) if options[:chdir]
+        STDOUT.reopen(options[:out]) if options[:out]
+        exec(*arguments)
+      rescue SystemCallError => error
+        STDERR.puts(error.message)
+        exit! 127
+      end
+    end
+    Process.waitpid(child)
+    $?.success?
+  end
+
+  def self.run(arguments, options)
+    root, views, ruby, bundle = options.values_at(:root, :views, :ruby, :bundle)
+    persist_lock = options.fetch(:persist_lock, false)
+    env = options.fetch(:env, {})
     working_directory = ENV.fetch("BUNDLER_PURIFIER_WORKING_DIRECTORY", root)
-    return system(env, ruby, bundle, *arguments, chdir: working_directory) if views.empty?
+    return native_system(env, bundle_command(ruby, bundle, arguments), :chdir => working_directory) if views.empty?
 
     command = arguments.find { |argument| !argument.start_with?("-") }
     env = env.merge("BUNDLER_PURIFIER_RUNTIME" => %w[exec console].include?(command) ? "1" : "0")
-    packages = views.each_with_object({}) do |view, result|
+    packages = {}
+    views.each do |view|
       catalog = JSON.parse(File.read(view.fetch("catalog")))
       entries = catalog.fetch("packages") + catalog.fetch("intrinsics", []).map { |entry| entry.merge("intrinsic" => true) }
       entries.each do |entry|
         name = entry.fetch("name")
-        candidate = entry.merge("repository" => "file://#{view.fetch('repository')}/")
-        if result.key?(name) && (
-          result[name].fetch("version") != candidate.fetch("version") ||
-          !!result[name]["intrinsic"] != !!candidate["intrinsic"] ||
-          (candidate["intrinsic"] ? result[name]["sdk"] != candidate["sdk"] : result[name]["integrity"] != candidate["integrity"]))
+        candidate = entry.merge("repository" => URI.parse("file://#{view.fetch('repository')}/").to_s)
+        if packages.key?(name) && (
+          packages[name].fetch("version") != candidate.fetch("version") ||
+          !!packages[name]["intrinsic"] != !!candidate["intrinsic"] ||
+          (candidate["intrinsic"] ? packages[name]["sdk"] != candidate["sdk"] : packages[name]["integrity"] != candidate["integrity"]))
           raise "bundler-purifier: conflicting Nix inputs for #{name}"
         end
-        result[name] = candidate
+        packages[name] = candidate
       end
     end
-    input_data = Marshal.dump(packages).unpack1("H*")
+    input_data = Marshal.dump(packages).unpack("H*").first
     if (persistent = ENV["BUNDLER_PURIFIER_PERSISTENT_GEMFILE"])
       native_env = env.merge("BUNDLE_GEMFILE" => persistent,
                              "BUNDLER_PURIFIER_INPUT_DATA" => input_data)
-      return system(native_env, ruby, bundle, *arguments, chdir: working_directory)
+      return native_system(native_env, bundle_command(ruby, bundle, arguments), :chdir => working_directory)
     end
     manifest = File.join(root, "Gemfile")
     original_lock = manifest + ".lock"
     facade = Tempfile.new([".bundler-purifier-", ".Gemfile"], root)
     facade_lock = facade.path + ".lock"
-    facade.write("require #{File.join(__dir__, 'rubygems_inputs.rb').inspect}\n")
+    facade.write("require #{File.join(File.dirname(__FILE__), 'rubygems_inputs.rb').inspect}\n")
     facade.write("eval_gemfile #{manifest.inspect}\n")
     facade.close
     FileUtils.cp(original_lock, facade_lock) if File.file?(original_lock)
@@ -51,17 +83,17 @@ module PurifierNativeBundle
         source = spec.source
         spec.version.to_s != package.fetch("version") ||
           !source.is_a?(Bundler::Source::Rubygems) ||
-          (package["intrinsic"] ? !source.remotes.empty? : !source.remotes.any? { |remote| remote.to_s.delete_suffix("/") == package.fetch("repository").delete_suffix("/") })
+          (package["intrinsic"] ? !source.remotes.empty? : !source.remotes.any? { |remote| remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "") })
       end
       if needs_binding
-        return false unless system(native_env, ruby, bundle, "lock", "--local", chdir: root, out: STDERR)
+        return false unless native_system(native_env, bundle_command(ruby, bundle, ["lock", "--local"]), :chdir => root, :out => STDERR)
       end
     end
-    result = system(native_env, ruby, bundle, *arguments, chdir: working_directory)
+    result = native_system(native_env, bundle_command(ruby, bundle, arguments), :chdir => working_directory)
     FileUtils.cp(facade_lock, original_lock) if result && persist_lock && File.file?(facade_lock)
     result
   ensure
     FileUtils.rm_f(facade_lock) if facade_lock
-    facade&.unlink
+    facade.unlink if facade
   end
 end

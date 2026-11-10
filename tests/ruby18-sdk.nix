@@ -1,7 +1,12 @@
 # SPDX-License-Identifier: MIT
 # Ruby 1.8 predates bundled RubyGems: keep the interpreter, package codec,
 # native manager and codec JSON extension as explicit immutable components.
-{ pkgs, olderRubySource }:
+{
+  pkgs,
+  olderRubySource,
+  bundlerVersion ? "1.17.3",
+  bundlerHash ? "sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I=",
+}:
 let
   old = import olderRubySource {
     system = "x86_64-linux";
@@ -12,8 +17,8 @@ let
     sha256 = "1bpz0p4rr1ncar115pshgy61kxmgd53ryxx66cxffj9m91vxzbpc";
   };
   bundlerGem = pkgs.fetchurl {
-    url = "https://rubygems.org/downloads/bundler-1.17.3.gem";
-    hash = "sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I=";
+    url = "https://rubygems.org/downloads/bundler-${bundlerVersion}.gem";
+    hash = bundlerHash;
   };
   jsonGem = pkgs.fetchurl {
     url = "https://rubygems.org/downloads/json-1.8.6.gem";
@@ -34,7 +39,7 @@ let
         makeWrapper "$out/bin/ruby" "$out/bin/gem" --add-flags ${rubygems}/bin/gem
       '';
   codecGems =
-    pkgs.runCommand "ruby187-bundler117-json186"
+    pkgs.runCommand "ruby187-bundler-${bundlerVersion}-json186"
       {
         nativeBuildInputs = [
           baseSdk
@@ -64,5 +69,6 @@ let
 in
 {
   inherit sdk;
+  gems = codecGems;
   compiler = old.stdenv.gcc;
 }

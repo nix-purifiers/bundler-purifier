@@ -36,6 +36,7 @@ require "rubygems/package"
 require "rubygems/remote_fetcher"
 require "uri"
 require "tmpdir"
+require "pathname"
 require "yaml"
 
 module BundlerPurifier
@@ -283,7 +284,7 @@ module BundlerPurifier
       "GEM_HOME" => File.join(state, "gems"),
       "BUNDLE_USER_HOME" => File.join(state, "bundle-home"),
       "BUNDLE_APP_CONFIG" => File.join(state, "bundle-config"),
-      "BUNDLE_CACHE_PATH" => File.join(state, "cache"),
+      "BUNDLE_CACHE_PATH" => Pathname.new(File.join(state, "cache")).relative_path_from(Pathname.new(root)).to_s,
       "BUNDLE_CACHE_ALL" => "true",
       "BUNDLE_CACHE_ALL_PLATFORMS" => "true",
       "BUNDLE_GEMFILE" => nil,
@@ -374,7 +375,7 @@ module BundlerPurifier
       locked_bundler = Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version
       cache_command = locked_bundler && locked_bundler < Gem::Version.new("2.0") ? "package" : "cache"
       native_bundle!(env, cache_command, "--all-platforms", "--no-install", persist_lock: true)
-      cache = env["BUNDLE_CACHE_PATH"]
+      cache = File.expand_path(env["BUNDLE_CACHE_PATH"], root)
       text = File.read(gemfile_lock_path)
       parser = Bundler::LockfileParser.new(text)
       checksums = gemfile_lock_checksums(text)
@@ -633,7 +634,7 @@ module BundlerPurifier
         FileUtils.chmod_R("u+w", dest)
       end
     end
-    run!({}, "nix", "develop", shell, "--command", "bundle", *config_command, "cache_path", cache, chdir: root)
+    run!({}, "nix", "develop", shell, "--command", "bundle", *config_command, "cache_path", Pathname.new(cache).relative_path_from(Pathname.new(root)).to_s, chdir: root)
     # A fresh project gets its own gems, rather than sharing the Ruby's
     # system or user gem directory. Explicit Bundler paths (including
     # path.system) remain the user's choice.

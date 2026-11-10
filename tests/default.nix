@@ -348,6 +348,16 @@ in
 // lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
   let
     native = import ./ruby18-sdk.nix { inherit pkgs olderRubySource; };
+    native116 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      bundlerVersion = "1.16.6";
+      bundlerHash = "sha256-B7RF6pjTkDLSVwFqlxoMCUdVbup4Vc5klw2iqC4JhgU=";
+    };
+    native110 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      bundlerVersion = "1.10.6";
+      bundlerHash = "sha256-+ykz0SMEzsddrHW5OhywRdoCaykebGWwl0TOuQB2n+4=";
+    };
     project = build {
       src = ./fixtures/ruby18;
       ruby = native.sdk;
@@ -357,6 +367,16 @@ in
   in
   {
     ruby18-sdk = native.sdk;
+    ruby18-bundler116-sdk = native116.sdk;
+    ruby18-bundler110-sdk = native110.sdk;
+    ruby18-bundler116-cli = cli.override {
+      projectRuby = native116.sdk;
+      projectNativeBuildInputs = [ native116.compiler ];
+    };
+    ruby18-bundler110-cli = cli.override {
+      projectRuby = native110.sdk;
+      projectNativeBuildInputs = [ native110.compiler ];
+    };
     ruby18-cli = cli.override {
       projectRuby = native.sdk;
       projectNativeBuildInputs = [ native.compiler ];
@@ -378,5 +398,29 @@ in
     ruby18-app = project.packages.app;
     ruby18-native-extension = project.tests;
     ruby18-repository = project.release.projections.rubygems;
+    ruby18-bundler110-input-composition =
+      pkgs.runCommand "ruby187-bundler110-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native110.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog} 1.8.7 1.10.6 ${native.gems}/gems
+          touch $out
+        '';
+    ruby18-bundler116-input-composition =
+      pkgs.runCommand "ruby187-bundler116-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native116.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog} 1.8.7 1.16.6 ${native.gems}/gems
+          touch $out
+        '';
+    ruby18-input-composition =
+      pkgs.runCommand "ruby187-bundler117-input-composition"
+        {
+          nativeBuildInputs = [ pkgs.python3 ];
+        }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog} 1.8.7
+          touch $out
+        '';
   }
 )
