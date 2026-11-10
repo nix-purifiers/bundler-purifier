@@ -95,6 +95,9 @@
   ruby ? null,
   # Keep index serialization independent of old native package codecs.
   indexRuby ? null,
+  # The archive projector is a host helper. RubyGems 1.x consumers use
+  # Gem::Package as a module and cannot run its modern archive API.
+  projectionRuby ? null,
   # Build tools and libraries for gems with native extensions, which
   # compile in the `app` build, beyond the ones nixpkgs names for them
   # (`useGemConfig`). The libraries are on LD_LIBRARY_PATH in the shell
@@ -640,7 +643,13 @@ let
       producer = app;
       inherit dependencies runCommand roots;
       intrinsics = readJson "${capturedGems}/intrinsics.json";
-      ruby = ruby';
+      ruby =
+        if projectionRuby != null then
+          projectionRuby
+        else if lib.versionOlder lock.ruby "1.9" then
+          indexRuby'
+        else
+          ruby';
       indexRuby = indexRuby';
       name = "${name}-rubygems-repository";
     };
