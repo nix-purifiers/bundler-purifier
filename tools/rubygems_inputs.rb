@@ -29,6 +29,20 @@ module PurifierGemInputs
     end
   end
 
+  LEGACY_SOURCE_ARRAY = !defined?(Bundler::SourceList)
+
+  def self.rubygems_sources(sources)
+    sources.respond_to?(:rubygems_sources) ? sources.rubygems_sources : sources.select { |source| source.is_a?(Bundler::Source::Rubygems) }
+  end
+
+  def self.add_rubygems_source(sources, remotes, intrinsic = false)
+    return sources.add_rubygems_source("remotes" => remotes) if sources.respond_to?(:add_rubygems_source)
+    candidate = Bundler::Source::Rubygems.new("remotes" => Array(remotes))
+    candidate.extend(IntrinsicSpecs) if intrinsic
+    existing = sources.find { |source| source == candidate }
+    existing || (sources << candidate; candidate)
+  end
+
   def self.source_requirements(packages, sources)
     result = {}
     packages.each { |name, package| result[name] = source_for(sources, package) }
@@ -40,9 +54,9 @@ module PurifierGemInputs
   PACKAGES = Marshal.load([ENV.fetch("BUNDLER_PURIFIER_INPUT_DATA")].pack("H*"))
 
   def self.source_for(sources, package)
-    return sources.rubygems_sources.find { |source| source.is_a?(IntrinsicSpecs) } if package["intrinsic"]
+    return rubygems_sources(sources).find { |source| source.is_a?(IntrinsicSpecs) } if package["intrinsic"]
     repository = package.fetch("repository")
-    sources.rubygems_sources.find do |source|
+    rubygems_sources(sources).find do |source|
       source.remotes.any? { |remote| remote.to_s == repository }
     end or raise "bundler-purifier: missing Nix repository #{repository}"
   end
@@ -93,7 +107,8 @@ module PurifierGemInputs
           next unless remote.scheme == "file"
           path = defined?(URI::DEFAULT_PARSER) ? URI::DEFAULT_PARSER.unescape(remote.path) : URI.unescape(remote.path)
           directory = File.join(path, "gems")
-          caches << Pathname.new(directory) unless caches.include?(Pathname.new(directory))
+          cache_paths = respond_to?(:caches) ? caches : instance_variable_get(:@caches)
+          cache_paths << Pathname.new(directory) unless cache_paths.include?(Pathname.new(directory))
           Dir[File.join(directory, "*.gem")].sort.each do |archive|
             spec = Bundler.rubygems.spec_from_gem(archive)
             next unless PACKAGES.key?(spec.name)
@@ -122,12 +137,12 @@ module PurifierGemInputs
         end
       end
       if intrinsics.any?
-        source = @sources.add_rubygems_source("remotes" => [])
+        source = PurifierGemInputs.add_rubygems_source(@sources, [], true)
         source.extend(IntrinsicSpecs)
         source.local! if source.respond_to?(:local!)
       end
       PACKAGES.values.reject { |package| package["intrinsic"] }.map { |package| package.fetch("repository") }.uniq.each do |repository|
-        source = @sources.add_rubygems_source("remotes" => repository)
+        source = PurifierGemInputs.add_rubygems_source(@sources, repository)
         if source.respond_to?(:local!)
           source.local!
         else
@@ -152,14 +167,14 @@ module PurifierGemInputs
       end
       definition = super(*arguments)
       unless defined?(Bundler::SourceMap)
-        definition.send(:sources).rubygems_sources.each do |source|
+        PurifierGemInputs.rubygems_sources(definition.send(:sources)).each do |source|
           next unless source.remotes.any? { |remote| remote.scheme == "file" }
           source.extend(LegacyRepositorySpecs)
           source.cached! unless ENV["BUNDLER_PURIFIER_RUNTIME"] == "1"
         end
       end
       if intrinsics.any?
-        definition.send(:sources).rubygems_sources.select { |source| source.remotes.empty? }.each do |source|
+        PurifierGemInputs.rubygems_sources(definition.send(:sources)).select { |source| source.remotes.empty? }.each do |source|
           source.extend(IntrinsicSpecs)
           source.local! if source.respond_to?(:local!)
         end
@@ -172,6 +187,10 @@ module PurifierGemInputs
         options = arguments.last.is_a?(Hash) ? arguments.pop.dup : {}
         options.delete_if do |key, _|
           %w[source git path github gitlab gist branch ref tag glob submodules].include?(key.to_s)
+        end
+        if PurifierGemInputs::LEGACY_SOURCE_ARRAY
+          repository_source = PurifierGemInputs.add_rubygems_source(@sources, package.fetch("repository"))
+          return source(repository_source) { super(name, *(arguments + [options])) }
         end
         options[:source] = package.fetch("repository")
         arguments << options
@@ -190,10 +209,49 @@ module PurifierGemInputs
     end
   end
 end
+if PurifierGemInputs::LEGACY_SOURCE_ARRAY
+  module PurifierGemInputs::RepositoryIdentity
+    def purifier_repository_identity
+      [is_a?(PurifierGemInputs::IntrinsicSpecs), remotes.map { |remote| remote.to_s.sub(/\/$/, "") }]
+    end
+
+    def purifier_nix_repository?
+      return true if is_a?(PurifierGemInputs::IntrinsicSpecs)
+      remotes.any? do |remote|
+        PurifierGemInputs::PACKAGES.values.any? do |package|
+          !package["intrinsic"] && remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "")
+        end
+      end
+    end
+
+    def hash
+      purifier_nix_repository? ? purifier_repository_identity.hash : super
+    end
+
+    def eql?(other)
+      return super unless purifier_nix_repository? || (other.is_a?(Bundler::Source::Rubygems) && other.purifier_nix_repository?)
+      other.is_a?(Bundler::Source::Rubygems) && purifier_repository_identity == other.purifier_repository_identity
+    end
+
+    def ==(other)
+      eql?(other)
+    end
+  end
+  PurifierGemInputs.install_patch(Bundler::Source::Rubygems, PurifierGemInputs::RepositoryIdentity)
+end
 PurifierGemInputs.install_patch(Bundler::Dependency, PurifierGemInputs::Requirements)
 PurifierGemInputs.install_patch(Gem::Specification, PurifierGemInputs::ProjectDependencies)
 PurifierGemInputs.install_patch(Bundler::Runtime, PurifierGemInputs::Runtime)
 PurifierGemInputs.install_patch(Bundler::Dsl, PurifierGemInputs::Dsl)
+unless Bundler::Dsl.method_defined?(:eval_gemfile)
+  module PurifierGemInputs::LegacyGemfileEvaluation
+    def eval_gemfile(path)
+      instance_eval(Bundler.read_file(path.to_s), path.to_s, 1)
+    end
+  end
+  PurifierGemInputs.install_patch(Bundler::Dsl, PurifierGemInputs::LegacyGemfileEvaluation)
+end
+
 if defined?(Bundler::SourceMap)
   PurifierGemInputs.install_patch(Bundler::SourceMap, PurifierGemInputs::SourceMap)
 else
@@ -216,6 +274,8 @@ else
 end
 
 # Native add/remove must edit the user's Gemfile, rather than the lent facade.
+# SDKs predating Injector keep their native command surface unchanged.
+if defined?(Bundler::Injector)
 require "bundler/injector"
 module PurifierGemInputs::Injector
   def append_to(path, lines)
@@ -231,6 +291,7 @@ module PurifierGemInputs::Injector
   end
 end
 PurifierGemInputs.install_patch(Bundler::Injector, PurifierGemInputs::Injector)
+end
 
 # Other lock platforms describe ordinary downloads. A declared Nix input
 # supplies its artifact for the current target; never require foreign builds
@@ -245,7 +306,7 @@ module PurifierGemInputs::Platforms
     end
   end
 end
-require "bundler/match_platform"
+require "bundler/match_platform" unless defined?(Bundler::MatchPlatform)
 PurifierGemInputs.install_patch(Bundler::MatchPlatform, PurifierGemInputs::Platforms)
 
 require "bundler/resolver"
@@ -258,3 +319,50 @@ module PurifierGemInputs::ResolverDependencies
   end
 end
 PurifierGemInputs.install_patch(Bundler::Resolver::SpecGroup, PurifierGemInputs::ResolverDependencies)
+
+# The earliest Definition builds source requirements inside resolve instead
+# of exposing a source_requirements method. Keep its sources scoped to this
+# native resolution, then pass the same indexes to its native resolver.
+if PurifierGemInputs::LEGACY_SOURCE_ARRAY
+  # These SDKs merge the first RubyGems source as their ordinary source.
+  # Keep ordinary RubyGems sources ahead of explicit Nix sources in just
+  # the RubyGems slots; other sources and ordinary remote order are retained.
+  module PurifierGemInputs::LegacySourceConvergence
+    def converge_sources
+      if @sources.any? { |source| source.is_a?(Bundler::Source::Rubygems) && source.purifier_nix_repository? }
+        [@sources, @locked_sources].each do |sources|
+          rubygems = sources.select { |source| source.is_a?(Bundler::Source::Rubygems) }
+          ordinary, provided = rubygems.partition { |source| !source.purifier_nix_repository? }
+          ordered = ordinary + provided
+          sources.replace(sources.map { |source| source.is_a?(Bundler::Source::Rubygems) ? ordered.shift : source })
+        end
+      end
+      super
+    end
+  end
+  PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::LegacySourceConvergence)
+  Bundler::Definition.send(:private, :converge_sources)
+  module PurifierGemInputs::InlineDefinitionSources
+    def resolve
+      previous = Thread.current[:purifier_definition_sources]
+      Thread.current[:purifier_definition_sources] = sources
+      super
+    ensure
+      Thread.current[:purifier_definition_sources] = previous
+    end
+  end
+  module PurifierGemInputs::InlineResolverSources
+    def resolve(requirements, index, source_requirements = {}, base = [])
+      sources = Thread.current[:purifier_definition_sources]
+      if sources
+        source_requirements = source_requirements.dup
+        PurifierGemInputs.source_requirements(PurifierGemInputs::PACKAGES, sources).each do |name, source|
+          source_requirements[name] = source.specs
+        end
+      end
+      super(requirements, index, source_requirements, base)
+    end
+  end
+  PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::InlineDefinitionSources)
+  PurifierGemInputs.install_patch(class << Bundler::Resolver; self; end, PurifierGemInputs::InlineResolverSources)
+end

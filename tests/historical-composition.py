@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
-"""Offline native Bundler 1.17 input binding, installation and ABI execution."""
+"""Offline native historical Bundler input binding, installation and ABI execution."""
+import argparse
 import base64
 import hashlib
 import io
@@ -12,14 +13,28 @@ import tarfile
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-tools, repository, catalog = map(Path, sys.argv[1:4])
-expected_ruby = sys.argv[4] if len(sys.argv) > 4 else '2.5.8'
-expected_bundler = sys.argv[5] if len(sys.argv) > 5 else '1.17.3'
-extra_gem_path = sys.argv[6] if len(sys.argv) > 6 else ''
-patchlevel, gem_version = {'1.8.7': (374, '2.6.14'), '2.5.8': (224, '3.1.2')}[expected_ruby]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('tools', type=Path)
+parser.add_argument('repository', type=Path)
+parser.add_argument('catalog', type=Path)
+parser.add_argument('expected_ruby', nargs='?', default='2.5.8')
+parser.add_argument('expected_bundler', nargs='?', default='1.17.3')
+parser.add_argument('extra_gem_path', nargs='?', default='')
+parser.add_argument('--versionless', action='store_true')
+parser.add_argument('--rubygems-version')
+parser.add_argument('--no-ruby-dsl', action='store_true')
+args = parser.parse_args()
+tools, repository, catalog = args.tools, args.repository, args.catalog
+expected_ruby, expected_bundler = args.expected_ruby, args.expected_bundler
+extra_gem_path, versionless = args.extra_gem_path, args.versionless
+patchlevel, default_gem_version = {'1.8.7': (374, '2.6.14'), '2.5.8': (224, '3.1.2')}[expected_ruby]
+gem_version = args.rubygems_version or default_gem_version
 with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     project = Path(temporary)
-    manifest = 'source "https://unreachable.invalid"\nruby "' + expected_ruby + '"\ngem "historical_greeting", ">= 99"\n'
+    ruby_declaration = '' if args.no_ruby_dsl else 'ruby "' + expected_ruby + '"\n'
+    manifest = 'source "https://unreachable.invalid"\n' + ruby_declaration + 'gem "historical_greeting", ">= 99"\n'
+    if args.no_ruby_dsl:
+        (project / '.ruby-version').write_text(expected_ruby + '\n')
     (project / 'Gemfile').write_text(manifest)
     environment = dict(os.environ, HOME=str(project),
         PATH=str(tools / 'bin') + ':' + os.environ['PATH'],
@@ -43,13 +58,17 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     entries = json.loads(catalog.read_text())['packages']
     for entry in entries:
         assert entry['version'].encode() in lock
-    assert ('BUNDLED WITH\n   ' + expected_bundler).encode() in lock
+    if versionless:
+        assert b'BUNDLED WITH' not in lock
+    else:
+        assert ('BUNDLED WITH\n   ' + expected_bundler).encode() in lock
     run('lock', '--local')
     assert (project / 'Gemfile.lock').read_bytes() == lock
     run('install', '--local')
     # Require in the application body, after native Bundler's runtime setup.
     runtime = r'''require "historical_greeting"
 require "digest/sha2"
+abort "resolver scope leaked" if Thread.current[:purifier_definition_sources]
 abort "wrong native parser" unless JSON.parser == JSON::Ext::Parser
 puts "RUNTIME|#{RUBY_VERSION}|#{RUBY_PATCHLEVEL}|#{Gem::VERSION}|#{Bundler::VERSION}"
 puts "VALUE|#{HistoricalGreeting.answer}"
@@ -87,6 +106,33 @@ puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
         parsers = [member for member in payload if member.isfile() and member.name.endswith('json/ext/parser.so')]
         assert len(parsers) == 1
         assert hashlib.sha256(payload.extractfile(parsers[0]).read()).hexdigest() == native_hash
+    if versionless:
+        identity = r'''klass = Bundler::Source::Rubygems
+repository = PurifierGemInputs::PACKAGES.values.find { |package| !package["intrinsic"] }.fetch("repository")
+nix = klass.new("remotes" => [repository])
+copy = klass.new("remotes" => [repository])
+ordinary = klass.new("remotes" => ["https://ordinary-one.invalid/"])
+other = klass.new("remotes" => ["https://ordinary-two.invalid/"])
+abort "ordinary source merge changed" unless ordinary == other && ordinary.hash == other.hash
+abort "Nix source collapsed" if nix == ordinary || ordinary == nix
+abort "same Nix source split" unless nix == copy && nix.hash == copy.hash
+forward = klass.new("remotes" => [repository, "https://ordinary-one.invalid/"])
+reverse = klass.new("remotes" => ["https://ordinary-one.invalid/", repository])
+abort "Nix remote priority discarded" if forward == reverse
+abort "hash identity mismatch" unless [nix,copy,ordinary,other,forward,reverse].uniq.size == 4
+intrinsic = klass.new("remotes" => []).extend(PurifierGemInputs::IntrinsicSpecs)
+intrinsic_copy = klass.new("remotes" => []).extend(PurifierGemInputs::IntrinsicSpecs)
+ordinary_empty = klass.new("remotes" => [])
+abort "intrinsic source collapsed" if intrinsic == ordinary_empty || ordinary_empty == intrinsic
+abort "intrinsic copy split" unless intrinsic == intrinsic_copy && intrinsic.hash == intrinsic_copy.hash
+abort "ordinary empty source merge changed" unless ordinary_empty == ordinary && ordinary_empty.hash == ordinary.hash
+sources = [ordinary_empty]
+added = PurifierGemInputs.add_rubygems_source(sources, [], true)
+abort "ordinary source reused for intrinsic" unless sources.size == 2 && !added.equal?(ordinary_empty)
+
+puts "SOURCE IDENTITY PASS"
+'''
+        assert run('exec', 'ruby', '-e', identity).strip() == 'SOURCE IDENTITY PASS'
     run('lock', '--local')
     assert (project / 'Gemfile.lock').read_bytes() == lock
 

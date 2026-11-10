@@ -207,6 +207,12 @@ class BundlerPurifierTest < Minitest::Test
     assert_nil BP.project_ruby_version("GEM\n  remote: https://rubygems.org/\n")
   end
 
+  def test_empty_lock_run_configuration_is_a_yaml_mapping
+    config_dir = File.join(@dir, "native-config")
+    BP.write_lock_run_config(config_dir)
+    assert_equal({}, YAML.load_file(File.join(config_dir, "config")))
+  end
+
   def test_lock_run_config_drops_the_settings_that_narrow_the_lock
     # A value with quotes in it, as Lobsters' sqlite3 flags have.
     write(".bundle/config", <<~YAML)
@@ -274,6 +280,25 @@ class BundlerPurifierTest < Minitest::Test
       File.write(File.join(@dir, "outside", "Gemfile.lock"), "changed\n")
       refute_equal in_tree, BP.definition_hash
     end
+  end
+
+  def test_native_bundler_marker_and_optional_metadata_must_agree
+    write("Gemfile.lock", LOCKFILE.sub("2.6.9", "1.17.3"))
+    assert_equal "1.17.3", BP.locked_bundler_version({})
+    assert_equal "1.17.3", BP.locked_bundler_version("bundlerVersion" => "1.17.3")
+    _, error = capture_io do
+      assert_raises(SystemExit) { BP.locked_bundler_version("bundlerVersion" => "1.3.6") }
+    end
+    assert_includes error, "conflicts with native BUNDLED WITH"
+  end
+
+  def test_versionless_native_lock_requires_explicit_identity
+    write("Gemfile.lock", LOCKFILE.sub(/\nBUNDLED WITH\n\s+[^\n]+\n?/, "\n"))
+    assert_equal "1.3.6", BP.locked_bundler_version("bundlerVersion" => "1.3.6")
+    _, error = capture_io do
+      assert_raises(SystemExit) { BP.locked_bundler_version({}) }
+    end
+    assert_includes error, "recapture with the intended native SDK"
   end
 
   def test_check_platforms_warns_without_a_linux_platform

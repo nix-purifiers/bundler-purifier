@@ -42,7 +42,7 @@ end
 mutates = %w[add remove update lock].include?(ARGV.first)
 environment = JSON.parse(File.read(File.join(bp.state_dir, "environment.json")))
 bundler_home = File.join(bp.state_dir, "bundler")
-bundler_version = Bundler::LockfileParser.new(File.read(bp.gemfile_lock_path)).bundler_version&.to_s || Bundler::VERSION
+bundler_version = bp.locked_bundler_version(lock)
 native_env = { "GEM_HOME" => bundler_home, "GEM_PATH" => bundler_home,
                "BUNDLER_PURIFIER_BUNDLER_VERSION" => bundler_version,
                "PATH" => "#{environment.fetch('PATH')}:#{ENV['PATH']}",

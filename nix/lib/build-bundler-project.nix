@@ -95,6 +95,9 @@
   ruby ? null,
   # Keep index serialization independent of old native package codecs.
   indexRuby ? null,
+  # The archive projector is a host helper. RubyGems 1.x consumers use
+  # Gem::Package as a module and cannot run its modern archive API.
+  projectionRuby ? null,
   # Build tools and libraries for gems with native extensions, which
   # compile in the `app` build, beyond the ones nixpkgs names for them
   # (`useGemConfig`). The libraries are on LD_LIBRARY_PATH in the shell
@@ -351,6 +354,14 @@ let
           bundle() { ruby ${integrationTools}/native_bundle_command.rb "$@"; }
         ''
     }
+    native_gem_install() {
+      local install_help
+      install_help=$(gem help install)
+      case "$install_help" in
+        *"--no-document"*|*"--[no-]document"*) gem install --local --no-document "$@" ;;
+        *) gem install --local --no-rdoc --no-ri "$@" ;;
+      esac
+    }
     mkdir -p "$HOME" "$GEM_HOME" vendor
     rm -rf vendor/cache
     # Bundler copies what it installs from the cache and leaves marker
@@ -366,7 +377,7 @@ let
     done
     # The locked Bundler, installed from the cache, so the build runs the
     # Bundler version of BUNDLED WITH and Bundler has nothing to fetch.
-    gem install --local --no-document --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" \
+    native_gem_install --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" \
       vendor/cache/bundler-${lock.bundler}.gem
     bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local cache_path vendor/cache
     ${lib.optionalString (selectedInputs != [ ]) ''
@@ -470,8 +481,10 @@ let
       installPhase = ''
         runHook preInstall
         # The locked Bundler, for the `bundle` wrapper to run the app with.
-        gem install --local --no-document --install-dir .bundle/purifier/bundler \
-          vendor/cache/bundler-${lock.bundler}.gem
+        # Native install may prune its writable cache, including Bundler's
+        # own archive. The exact hashed SDK input remains in the Nix cache.
+        native_gem_install --install-dir .bundle/purifier/bundler \
+          ${gemCache}/bundler-${lock.bundler}.gem
         # Older Bundler gems mark ERB executable templates as executable.
         # They are generator data, not scripts for fixup to interpret.
         for template in .bundle/purifier/bundler/gems/bundler-*/lib/bundler/templates/Executable*; do
@@ -630,7 +643,13 @@ let
       producer = app;
       inherit dependencies runCommand roots;
       intrinsics = readJson "${capturedGems}/intrinsics.json";
-      ruby = ruby';
+      ruby =
+        if projectionRuby != null then
+          projectionRuby
+        else if lib.versionOlder lock.ruby "1.9" then
+          indexRuby'
+        else
+          ruby';
       indexRuby = indexRuby';
       name = "${name}-rubygems-repository";
     };

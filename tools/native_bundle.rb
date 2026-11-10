@@ -10,8 +10,7 @@ module PurifierNativeBundle
   # process. Activate before loading it so another visible Bundler cannot
   # silently replace the requested native SDK.
   def self.bundle_command(ruby, bundle, arguments)
-    bootstrap = 'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); $0 = ARGV.shift; load $0'
-    [ruby, "-e", bootstrap, bundle] + arguments
+    [ruby, File.join(File.dirname(__FILE__), "native_bundle_bootstrap.rb"), bundle] + arguments
   end
 
   # Ruby 1.8 has neither keyword arguments nor system's environment/chdir
