@@ -378,5 +378,15 @@ in
     ruby18-app = project.packages.app;
     ruby18-native-extension = project.tests;
     ruby18-repository = project.release.projections.rubygems;
+    ruby18-input-composition =
+      pkgs.runCommand "ruby187-bundler117-input-composition"
+        {
+          nativeBuildInputs = [ pkgs.python3 ];
+        }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog} 1.8.7
+          touch $out
+        '';
   }
 )

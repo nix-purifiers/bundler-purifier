@@ -2,6 +2,39 @@
 # Loaded by a facade Gemfile before Bundler evaluates the user's Gemfile.
 require "bundler"
 module PurifierGemInputs
+  # Before Ruby 2, include cannot override methods defined by a class.
+  # Move just the intercepted methods into an included predecessor so the
+  # same patches retain their ordinary super chain on the old interpreter.
+  def self.install_patch(target, patch)
+    return if target.ancestors.include?(patch)
+    if target.respond_to?(:prepend)
+      target.send(:prepend, patch)
+    else
+      # Ruby 1.8 does not propagate later module includes to classes that
+      # already included it (Bundler::MatchPlatform is one such module).
+      unless target.is_a?(Class)
+        consumers = []
+        ObjectSpace.each_object(Class) { |klass| consumers << klass if klass.ancestors.include?(target) }
+        consumers.each { |klass| install_patch(klass, patch) }
+      end
+      predecessor = Module.new
+      patch.instance_methods(false).each do |name|
+        next unless target.method_defined?(name) || target.private_method_defined?(name)
+        predecessor.send(:define_method, name, target.instance_method(name))
+        own = target.instance_methods(false) + target.private_instance_methods(false)
+        target.send(:remove_method, name) if own.map { |method| method.to_s }.include?(name.to_s)
+      end
+      target.send(:include, predecessor)
+      target.send(:include, patch)
+    end
+  end
+
+  def self.source_requirements(packages, sources)
+    result = {}
+    packages.each { |name, package| result[name] = source_for(sources, package) }
+    result
+  end
+
   # Parse catalogs in the parent process: loading JSON here would activate
   # Ruby's default json gem before Bundler can select a projected json gem.
   PACKAGES = Marshal.load([ENV.fetch("BUNDLER_PURIFIER_INPUT_DATA")].pack("H*"))
@@ -58,7 +91,8 @@ module PurifierGemInputs
       @purifier_legacy_cached_specs ||= super.tap do |index|
         remotes.each do |remote|
           next unless remote.scheme == "file"
-          directory = File.join(URI::DEFAULT_PARSER.unescape(remote.path), "gems")
+          path = defined?(URI::DEFAULT_PARSER) ? URI::DEFAULT_PARSER.unescape(remote.path) : URI.unescape(remote.path)
+          directory = File.join(path, "gems")
           caches << Pathname.new(directory) unless caches.include?(Pathname.new(directory))
           Dir[File.join(directory, "*.gem")].sort.each do |archive|
             spec = Bundler.rubygems.spec_from_gem(archive)
@@ -74,7 +108,7 @@ module PurifierGemInputs
   module Runtime
     def setup(*arguments)
       result = super
-      Gem::Dependency.prepend(Requirements) unless Gem::Dependency.ancestors.include?(Requirements)
+      PurifierGemInputs.install_patch(Gem::Dependency, Requirements)
       result
     end
   end
@@ -108,7 +142,7 @@ module PurifierGemInputs
           next unless package
           source = spec.source
           same_source = source.is_a?(Bundler::Source::Rubygems) &&
-            (package["intrinsic"] ? source.remotes.empty? : source.remotes.any? { |remote| remote.to_s.delete_suffix("/") == package.fetch("repository").delete_suffix("/") })
+            (package["intrinsic"] ? source.remotes.empty? : source.remotes.any? { |remote| remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "") })
           spec.name unless spec.version.to_s == package.fetch("version") && same_source
         end
         changed.compact!
@@ -148,30 +182,28 @@ module PurifierGemInputs
 
   module SourceMap
     def direct_requirements
-      super.merge(PACKAGES.transform_values { |package| PurifierGemInputs.source_for(sources, package) })
+      super.merge(PurifierGemInputs.source_requirements(PACKAGES, sources))
     end
 
     def all_requirements
-      super.merge(PACKAGES.transform_values { |package| PurifierGemInputs.source_for(sources, package) })
+      super.merge(PurifierGemInputs.source_requirements(PACKAGES, sources))
     end
   end
 end
-Bundler::Dependency.prepend(PurifierGemInputs::Requirements)
-Gem::Specification.prepend(PurifierGemInputs::ProjectDependencies)
-Bundler::Runtime.prepend(PurifierGemInputs::Runtime)
-Bundler::Dsl.prepend(PurifierGemInputs::Dsl)
+PurifierGemInputs.install_patch(Bundler::Dependency, PurifierGemInputs::Requirements)
+PurifierGemInputs.install_patch(Gem::Specification, PurifierGemInputs::ProjectDependencies)
+PurifierGemInputs.install_patch(Bundler::Runtime, PurifierGemInputs::Runtime)
+PurifierGemInputs.install_patch(Bundler::Dsl, PurifierGemInputs::Dsl)
 if defined?(Bundler::SourceMap)
-  Bundler::SourceMap.prepend(PurifierGemInputs::SourceMap)
+  PurifierGemInputs.install_patch(Bundler::SourceMap, PurifierGemInputs::SourceMap)
 else
   # Bundler 1.x passes the equivalent mapping directly from Definition.
   module PurifierGemInputs::LegacySourceRequirements
     def source_requirements
-      super.merge(PurifierGemInputs::PACKAGES.transform_values do |package|
-        PurifierGemInputs.source_for(sources, package)
-      end)
+      super.merge(PurifierGemInputs.source_requirements(PurifierGemInputs::PACKAGES, sources))
     end
   end
-  Bundler::Definition.prepend(PurifierGemInputs::LegacySourceRequirements)
+  PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::LegacySourceRequirements)
 end
 
 # Native add/remove must edit the user's Gemfile, rather than the lent facade.
@@ -189,7 +221,7 @@ module PurifierGemInputs::Injector
     super
   end
 end
-Bundler::Injector.prepend(PurifierGemInputs::Injector)
+PurifierGemInputs.install_patch(Bundler::Injector, PurifierGemInputs::Injector)
 
 # Other lock platforms describe ordinary downloads. A declared Nix input
 # supplies its artifact for the current target; never require foreign builds
@@ -205,7 +237,7 @@ module PurifierGemInputs::Platforms
   end
 end
 require "bundler/match_platform"
-Bundler::MatchPlatform.prepend(PurifierGemInputs::Platforms)
+PurifierGemInputs.install_patch(Bundler::MatchPlatform, PurifierGemInputs::Platforms)
 
 require "bundler/resolver/spec_group"
 module PurifierGemInputs::ResolverDependencies
@@ -215,4 +247,4 @@ module PurifierGemInputs::ResolverDependencies
     end
   end
 end
-Bundler::Resolver::SpecGroup.prepend(PurifierGemInputs::ResolverDependencies)
+PurifierGemInputs.install_patch(Bundler::Resolver::SpecGroup, PurifierGemInputs::ResolverDependencies)

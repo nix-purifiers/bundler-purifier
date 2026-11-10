@@ -70,3 +70,21 @@ jobs:
             .#checks.x86_64-linux.ruby18-repository \
             .#checks.x86_64-linux.ruby18-release)
           python3 tests/historical-native.py "${ruby18[@]}" 1.8.7 ruby18
+          python3 tests/ruby18-incoming-native.py "${ruby18[0]}" "${ruby18[1]}" \
+            --results "$RUNNER_TEMP/ruby18-incoming-evidence"
+
+      - name: Retain historical incoming composition receipts
+        if: always() && runner.os == 'Linux' && runner.arch == 'X64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ruby18-incoming-composition
+          path: |
+            ${{ runner.temp }}/ruby18-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby18-incoming-evidence/logs/*
+            ${{ runner.temp }}/ruby18-incoming-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby18-incoming-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby18-incoming-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby18-incoming-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby18-incoming-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby18-incoming-evidence/consumer.nix
+          if-no-files-found: ignore
