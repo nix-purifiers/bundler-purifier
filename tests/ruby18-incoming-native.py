@@ -267,21 +267,24 @@ in build {
     indexes = {str(path.relative_to(repository)): path.read_bytes() for path in repository.rglob('*')
                if path.is_file() and 'gems' not in path.relative_to(repository).parts}
     registry_sdk_archives = {}
-    if int(args.rubygems_version.split('.')[0]) < 2:
-        # Native RubyGems 1.8 push first queries the configured source for
+    if args.rubygems_update_archive is not None or int(args.rubygems_version.split('.')[0]) < 2:
+        # Native historical RubyGems push first queries the configured source for
         # rubygems-update. Serve its genuine SDK archive in this private
         # registry; retain the client's upstream check without network access.
         update = args.rubygems_update_archive
         assert update is not None and update.is_file()
         update_bytes = update.read_bytes()
-        assert args.rubygems_version == '1.8.30'
-        assert hashlib.sha256(update_bytes).hexdigest() == 'e9f5e3052c5db8d1bf77c2a65047ed5bd9977b73c0ed908c406610210591854c'
-        registry_sdk_archives['rubygems-update-1.8.30.gem'] = update_bytes
+        update_hashes = {
+            '1.8.30': 'e9f5e3052c5db8d1bf77c2a65047ed5bd9977b73c0ed908c406610210591854c',
+            '2.6.14': 'ecaedf77483549e73a33a6779f4769aff6198c7f50df124256cc869cc905ffae',
+        }
+        assert hashlib.sha256(update_bytes).hexdigest() == update_hashes[args.rubygems_version]
+        registry_sdk_archives['rubygems-update-' + args.rubygems_version + '.gem'] = update_bytes
         index_directory = work / 'publication-index'
         index_directory.mkdir()
         index_output = run('native-publication-index', [args.sdk / 'bin/ruby', ROOT / 'tests/rubygems-registry-index.rb',
             index_directory, update, *sorted((repository / 'gems').glob('*.gem'))])
-        assert index_output == 'NATIVE_INDEX|1.8.7|1.8.30|4\n', index_output
+        assert index_output == f'NATIVE_INDEX|1.8.7|{args.rubygems_version}|4\n', index_output
         indexes.update({str(path.relative_to(index_directory)): path.read_bytes()
                        for path in index_directory.rglob('*') if path.is_file()})
         receipt['publicationSdkArchiveSha256'] = hashlib.sha256(update_bytes).hexdigest()

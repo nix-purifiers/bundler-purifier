@@ -385,6 +385,7 @@ in
   in
   {
     ruby18-sdk = native.sdk;
+    ruby18-rubygems-update = native.rubygemsUpdate;
     ruby18-bundler10-sdk = native10.sdk;
     ruby18-bundler10-rubygems-update = native10.rubygemsUpdate;
     ruby18-bundler10-cli = cli.override {

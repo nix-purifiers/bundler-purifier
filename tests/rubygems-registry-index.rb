@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Native index for the private RubyGems 1.8 publication fixture.
 require "rubygems"
-require "rubygems/format"
+require "rubygems/package"
+require "rubygems/format" unless Gem::Package.respond_to?(:new)
 require "zlib"
 require "fileutils"
 
@@ -9,7 +10,11 @@ root = ARGV.shift
 tuples = []
 FileUtils.mkdir_p(File.join(root, "quick", "Marshal.4.8"))
 ARGV.each do |archive|
-  spec = Gem::Format.from_file_by_path(archive).spec
+  spec = if Gem::Package.respond_to?(:new)
+    Gem::Package.new(archive).spec
+  else
+    Gem::Format.from_file_by_path(archive).spec
+  end
   tuples << [spec.name, spec.version, spec.platform.to_s]
   path = File.join(root, "quick", "Marshal.4.8", "#{spec.original_name}.gemspec.rz")
   File.open(path, "wb") { |file| file.write(Zlib::Deflate.deflate(Marshal.dump(spec))) }
