@@ -18,6 +18,13 @@ end
 # Early Bundler hard-codes vendor/cache. Honor the isolated cache setting
 # through the later native convention; native app-config support is retained.
 unless Bundler::Settings.method_defined?(:app_cache_path)
+  require "bundler/runtime"
+  class Bundler::Runtime
+    def cache_path
+      Bundler.app_cache
+    end
+    private :cache_path
+  end
   class << Bundler
     alias_method :purifier_original_app_cache, :app_cache
     def app_cache
