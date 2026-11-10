@@ -283,7 +283,7 @@ in build {
         index_directory = work / 'publication-index'
         index_directory.mkdir()
         index_output = run('native-publication-index', [args.sdk / 'bin/ruby', ROOT / 'tests/rubygems-registry-index.rb',
-            index_directory, update, *sorted((repository / 'gems').glob('*.gem'))])
+            index_directory, update, repository])
         assert index_output == f'NATIVE_INDEX|1.8.7|{args.rubygems_version}|4\n', index_output
         indexes.update({str(path.relative_to(index_directory)): path.read_bytes()
                        for path in index_directory.rglob('*') if path.is_file()})
