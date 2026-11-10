@@ -210,7 +210,7 @@ end
 if PurifierGemInputs::LEGACY_SOURCE_ARRAY
   module PurifierGemInputs::RepositoryIdentity
     def purifier_repository_identity
-      remotes.map { |remote| remote.to_s.sub(/\/$/, "") }.sort
+      remotes.map { |remote| remote.to_s.sub(/\/$/, "") }
     end
 
     def hash
