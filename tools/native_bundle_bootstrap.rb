@@ -8,6 +8,14 @@ require "bundler/cli"
 # Early Bundler hard-codes vendor/cache and .bundle/config. Honor the
 # purifier's isolated native settings using the later native conventions.
 unless Bundler.respond_to?(:app_config_path)
+  # Early Path::Installer stores @spec directly, while newer RubyGems'
+  # inherited accessor expects @package. Later Bundler supplies this reader.
+  require "bundler/source/path/installer"
+  unless Bundler::Source::Path::Installer.instance_methods(false).map { |name| name.to_s }.include?("spec")
+    class Bundler::Source::Path::Installer
+      attr_reader :spec
+    end
+  end
   class Bundler::Settings
     alias_method :purifier_original_local_config_file, :local_config_file
     def local_config_file
