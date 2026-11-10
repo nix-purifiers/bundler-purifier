@@ -329,7 +329,8 @@ in build {
         if registry_sdk_archives:
             (home / '.gemrc').write_text('---\n:sources:\n- ' + host + '\n')
         publication = dict(env, GEM_HOST_API_KEY='fixture-key')
-        publish = [command, 'publish', '--host', host, '--no-http-proxy']
+        proxy_flags = ['--no-http-proxy'] if registry_sdk_archives else []
+        publish = [command, 'publish', '--host', host, *proxy_flags]
         run('publish-projected', publish, project, publication)
         assert stored == archives
         assert publication_agents and all(agent.startswith('RubyGems/' + args.rubygems_version) for agent in publication_agents), publication_agents
@@ -344,7 +345,7 @@ in build {
         version = root_archive[len('incoming_consumer-'):-len('.gem')]
         gem_help = run('native-gem-install-help', [args.sdk / 'bin/gem', 'help', 'install'], ordinary, ordinary_env)
         doc_flags = ['--no-document'] if '--no-document' in gem_help or '--[no-]document' in gem_help else ['--no-rdoc', '--no-ri']
-        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, '--no-http-proxy', '--clear-sources', '--prerelease',
+        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, *proxy_flags, '--clear-sources', '--prerelease',
             '--source', host, 'incoming_consumer', '--version', version], ordinary, ordinary_env)
         ordinary_code = r'''require "incoming_consumer"
 require "digest/sha2"
