@@ -27,6 +27,7 @@ parser.add_argument('--versionless', action='store_true')
 parser.add_argument('--extra-gem-path', type=Path)
 parser.add_argument('--rubygems-version', default='2.6.14')
 parser.add_argument('--no-ruby-dsl', action='store_true')
+parser.add_argument('--rubygems-update-archive', type=Path)
 args = parser.parse_args()
 work = args.results.resolve() if args.results else Path(tempfile.mkdtemp(prefix='ruby18-incoming-'))
 work.mkdir(parents=True, exist_ok=args.results is None)
@@ -265,6 +266,25 @@ in build {
     publication_agents = []
     indexes = {str(path.relative_to(repository)): path.read_bytes() for path in repository.rglob('*')
                if path.is_file() and 'gems' not in path.relative_to(repository).parts}
+    registry_sdk_archives = {}
+    if int(args.rubygems_version.split('.')[0]) < 2:
+        # Native RubyGems 1.8 push first queries the configured source for
+        # rubygems-update. Serve its genuine SDK archive in this private
+        # registry; retain the client's upstream check without network access.
+        update = args.rubygems_update_archive
+        assert update is not None and update.is_file()
+        update_bytes = update.read_bytes()
+        assert args.rubygems_version == '1.8.30'
+        assert hashlib.sha256(update_bytes).hexdigest() == 'e9f5e3052c5db8d1bf77c2a65047ed5bd9977b73c0ed908c406610210591854c'
+        registry_sdk_archives['rubygems-update-1.8.30.gem'] = update_bytes
+        index_directory = work / 'publication-index'
+        index_directory.mkdir()
+        index_output = run('native-publication-index', [args.sdk / 'bin/ruby', ROOT / 'tests/rubygems-registry-index.rb',
+            index_directory, update, *sorted((repository / 'gems').glob('*.gem'))])
+        assert index_output == 'NATIVE_INDEX|1.8.7|1.8.30|4\n', index_output
+        indexes.update({str(path.relative_to(index_directory)): path.read_bytes()
+                       for path in index_directory.rglob('*') if path.is_file()})
+        receipt['publicationSdkArchiveSha256'] = hashlib.sha256(update_bytes).hexdigest()
 
     class Registry(http.server.BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -272,7 +292,7 @@ in build {
 
         def do_GET(self):
             name = self.path.lstrip('/')
-            data = stored.get(name[5:]) if name.startswith('gems/') else indexes.get(name)
+            data = (stored.get(name[5:]) or registry_sdk_archives.get(name[5:])) if name.startswith('gems/') else indexes.get(name)
             self.send_response(200 if data is not None else 404)
             self.send_header('Content-Length', str(len(data or b'')))
             self.end_headers()
@@ -306,8 +326,10 @@ in build {
         credentials.parent.mkdir(exist_ok=True)
         credentials.write_text('---\n:rubygems_api_key: fixture-key\n')
         credentials.chmod(0o600)
+        if registry_sdk_archives:
+            (home / '.gemrc').write_text('---\n:sources:\n- ' + host + '\n')
         publication = dict(env, GEM_HOST_API_KEY='fixture-key')
-        publish = [command, 'publish', '--host', host]
+        publish = [command, 'publish', '--host', host, '--no-http-proxy']
         run('publish-projected', publish, project, publication)
         assert stored == archives
         assert publication_agents and all(agent.startswith('RubyGems/' + args.rubygems_version) for agent in publication_agents), publication_agents
@@ -322,7 +344,7 @@ in build {
         version = root_archive[len('incoming_consumer-'):-len('.gem')]
         gem_help = run('native-gem-install-help', [args.sdk / 'bin/gem', 'help', 'install'], ordinary, ordinary_env)
         doc_flags = ['--no-document'] if '--no-document' in gem_help or '--[no-]document' in gem_help else ['--no-rdoc', '--no-ri']
-        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, '--clear-sources', '--prerelease',
+        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, '--no-http-proxy', '--clear-sources', '--prerelease',
             '--source', host, 'incoming_consumer', '--version', version], ordinary, ordinary_env)
         ordinary_code = r'''require "incoming_consumer"
 require "digest/sha2"

@@ -77,9 +77,15 @@ jobs:
         if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
         run: |
-          for epoch in 110 116 136; do
+          for epoch in 10 110 116 136; do
             extra=()
             case "$epoch" in
+              10)
+                version=1.0.22; hash='sha256-wOcoWqMSJAdHs6Ox3ll4agSVCkJA7GyWudDv3VjU7EM='
+                higher=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-bundler117-gems)
+                update=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-bundler10-rubygems-update)
+                extra=(--versionless --extra-gem-path "$higher/gems" --rubygems-version 1.8.30 --no-ruby-dsl --rubygems-update-archive "$update")
+                ;;
               110) version=1.10.6; hash='sha256-+ykz0SMEzsddrHW5OhywRdoCaykebGWwl0TOuQB2n+4=' ;;
               116) version=1.16.6; hash='sha256-B7RF6pjTkDLSVwFqlxoMCUdVbup4Vc5klw2iqC4JhgU=' ;;
               136)

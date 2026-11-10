@@ -73,7 +73,7 @@ let
       '';
 in
 {
-  inherit sdk;
+  inherit sdk rubygemsUpdate;
   gems = codecGems;
   compiler = old.stdenv.gcc;
 }
