@@ -107,7 +107,8 @@ module PurifierGemInputs
           next unless remote.scheme == "file"
           path = defined?(URI::DEFAULT_PARSER) ? URI::DEFAULT_PARSER.unescape(remote.path) : URI.unescape(remote.path)
           directory = File.join(path, "gems")
-          caches << Pathname.new(directory) unless caches.include?(Pathname.new(directory))
+          cache_paths = respond_to?(:caches) ? caches : instance_variable_get(:@caches)
+          cache_paths << Pathname.new(directory) unless cache_paths.include?(Pathname.new(directory))
           Dir[File.join(directory, "*.gem")].sort.each do |archive|
             spec = Bundler.rubygems.spec_from_gem(archive)
             next unless PACKAGES.key?(spec.name)
@@ -242,6 +243,15 @@ PurifierGemInputs.install_patch(Bundler::Dependency, PurifierGemInputs::Requirem
 PurifierGemInputs.install_patch(Gem::Specification, PurifierGemInputs::ProjectDependencies)
 PurifierGemInputs.install_patch(Bundler::Runtime, PurifierGemInputs::Runtime)
 PurifierGemInputs.install_patch(Bundler::Dsl, PurifierGemInputs::Dsl)
+unless Bundler::Dsl.method_defined?(:eval_gemfile)
+  module PurifierGemInputs::LegacyGemfileEvaluation
+    def eval_gemfile(path)
+      instance_eval(Bundler.read_file(path.to_s), path.to_s, 1)
+    end
+  end
+  PurifierGemInputs.install_patch(Bundler::Dsl, PurifierGemInputs::LegacyGemfileEvaluation)
+end
+
 if defined?(Bundler::SourceMap)
   PurifierGemInputs.install_patch(Bundler::SourceMap, PurifierGemInputs::SourceMap)
 else
@@ -264,6 +274,8 @@ else
 end
 
 # Native add/remove must edit the user's Gemfile, rather than the lent facade.
+# SDKs predating Injector keep their native command surface unchanged.
+if defined?(Bundler::Injector)
 require "bundler/injector"
 module PurifierGemInputs::Injector
   def append_to(path, lines)
@@ -279,6 +291,7 @@ module PurifierGemInputs::Injector
   end
 end
 PurifierGemInputs.install_patch(Bundler::Injector, PurifierGemInputs::Injector)
+end
 
 # Other lock platforms describe ordinary downloads. A declared Nix input
 # supplies its artifact for the current target; never require foreign builds
@@ -293,7 +306,7 @@ module PurifierGemInputs::Platforms
     end
   end
 end
-require "bundler/match_platform"
+require "bundler/match_platform" unless defined?(Bundler::MatchPlatform)
 PurifierGemInputs.install_patch(Bundler::MatchPlatform, PurifierGemInputs::Platforms)
 
 require "bundler/resolver"
@@ -311,6 +324,24 @@ PurifierGemInputs.install_patch(Bundler::Resolver::SpecGroup, PurifierGemInputs:
 # of exposing a source_requirements method. Keep its sources scoped to this
 # native resolution, then pass the same indexes to its native resolver.
 if PurifierGemInputs::LEGACY_SOURCE_ARRAY
+  # These SDKs merge the first RubyGems source as their ordinary source.
+  # Keep ordinary RubyGems sources ahead of explicit Nix sources in just
+  # the RubyGems slots; other sources and ordinary remote order are retained.
+  module PurifierGemInputs::LegacySourceConvergence
+    def converge_sources
+      if @sources.any? { |source| source.is_a?(Bundler::Source::Rubygems) && source.purifier_nix_repository? }
+        [@sources, @locked_sources].each do |sources|
+          rubygems = sources.select { |source| source.is_a?(Bundler::Source::Rubygems) }
+          ordinary, provided = rubygems.partition { |source| !source.purifier_nix_repository? }
+          ordered = ordinary + provided
+          sources.replace(sources.map { |source| source.is_a?(Bundler::Source::Rubygems) ? ordered.shift : source })
+        end
+      end
+      super
+    end
+  end
+  PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::LegacySourceConvergence)
+  Bundler::Definition.send(:private, :converge_sources)
   module PurifierGemInputs::InlineDefinitionSources
     def resolve
       previous = Thread.current[:purifier_definition_sources]

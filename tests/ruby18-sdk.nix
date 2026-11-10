@@ -4,6 +4,8 @@
 {
   pkgs,
   olderRubySource,
+  rubygemsVersion ? "2.6.14",
+  rubygemsHash ? "sha256-7K7fd0g1Sec6M6Z3n0dpr/YZjH9Q3xJCVsyGnMkF/64=",
   bundlerVersion ? "1.17.3",
   bundlerHash ? "sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I=",
 }:
@@ -12,9 +14,12 @@ let
     system = "x86_64-linux";
     config = { };
   };
+  gemId = pkgs.lib.replaceStrings [ "." ] [ "" ] rubygemsVersion;
+  documentFlags =
+    if pkgs.lib.versionOlder rubygemsVersion "2.0" then "--no-rdoc --no-ri" else "--no-document";
   rubygemsUpdate = pkgs.fetchurl {
-    url = "https://rubygems.org/downloads/rubygems-update-2.6.14.gem";
-    sha256 = "1bpz0p4rr1ncar115pshgy61kxmgd53ryxx66cxffj9m91vxzbpc";
+    url = "https://rubygems.org/downloads/rubygems-update-${rubygemsVersion}.gem";
+    hash = rubygemsHash;
   };
   bundlerGem = pkgs.fetchurl {
     url = "https://rubygems.org/downloads/bundler-${bundlerVersion}.gem";
@@ -24,14 +29,14 @@ let
     url = "https://rubygems.org/downloads/json-1.8.6.gem";
     hash = "sha256-Za8nyphfcOsNCDqrD3VxLHcYcSIq8CHOUzutd707smI=";
   };
-  rubygems = pkgs.runCommand "ruby187-rubygems2614" { nativeBuildInputs = [ pkgs.ruby ]; } ''
+  rubygems = pkgs.runCommand "ruby187-rubygems${gemId}" { nativeBuildInputs = [ pkgs.ruby ]; } ''
     export HOME=$TMPDIR LC_ALL=C
     ruby -rfileutils -rrubygems/package -e 'Gem::Package.new(ARGV[0]).extract_files("source")' ${rubygemsUpdate}
     cd source
-    ${old.ruby_1_8}/bin/ruby setup.rb --prefix="$out" --no-document
+    ${old.ruby_1_8}/bin/ruby setup.rb --prefix="$out" ${documentFlags}
   '';
   baseSdk =
-    pkgs.runCommand "ruby187-rubygems2614-base" { nativeBuildInputs = [ pkgs.makeWrapper ]; }
+    pkgs.runCommand "ruby187-rubygems${gemId}-base" { nativeBuildInputs = [ pkgs.makeWrapper ]; }
       ''
         mkdir -p "$out/bin"
         makeWrapper ${old.ruby_1_8}/bin/ruby "$out/bin/ruby" --prefix RUBYLIB : ${rubygems}/lib --set LC_ALL C \
@@ -48,11 +53,11 @@ let
       }
       ''
         export HOME=$TMPDIR GEM_HOME=$out/gems GEM_PATH=$out/gems
-        gem install --local --no-document --install-dir "$out/gems" ${bundlerGem} ${jsonGem}
-        ruby -e 'require "rubygems"; require "json"; abort unless RUBY_VERSION == "1.8.7"; abort unless JSON.parser == JSON::Ext::Parser; abort unless JSON.parse(%q({"answer":42}))["answer"] == 42'
+        gem install --local ${documentFlags} --install-dir "$out/gems" ${bundlerGem} ${jsonGem}
+        ruby -e 'require "rubygems"; require "json"; abort unless RUBY_VERSION == "1.8.7" && Gem::VERSION == "${rubygemsVersion}"; abort unless JSON.parser == JSON::Ext::Parser; abort unless JSON.parse(%q({"answer":42}))["answer"] == 42'
       '';
   sdk =
-    pkgs.runCommand "ruby187-rubygems2614-sdk"
+    pkgs.runCommand "ruby187-rubygems${gemId}-sdk"
       {
         nativeBuildInputs = [ pkgs.makeWrapper ];
         version = "1.8.7";

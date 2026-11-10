@@ -8,8 +8,8 @@ require "bundler/cli"
 # Early Path::Installer stores @spec directly, while newer RubyGems'
 # inherited accessor expects @package. Later Bundler supplies this reader.
 unless defined?(Bundler::SourceList)
-  require "bundler/source/path/installer"
-  unless Bundler::Source::Path::Installer.instance_methods(false).map { |name| name.to_s }.include?("spec")
+  require "bundler/source"
+  if defined?(Bundler::Source::Path::Installer) && !Bundler::Source::Path::Installer.instance_methods(false).map { |name| name.to_s }.include?("spec")
     class Bundler::Source::Path::Installer
       attr_reader :spec
     end
@@ -37,7 +37,8 @@ end
 $0 = ARGV.shift
 # These SDKs write their native lock as part of install, before a separate
 # lock command existed. Keep resolution and lock serialization native.
-if ARGV.first == "lock" && !Bundler::CLI.instance_methods.map { |name| name.to_s }.include?("lock")
+legacy_install_lock = defined?(Bundler::Definition) && !defined?(Bundler::SourceList)
+if ARGV.first == "lock" && (legacy_install_lock || !Bundler::CLI.instance_methods.map { |name| name.to_s }.include?("lock"))
   ARGV[0] = "install"
 end
 load $0

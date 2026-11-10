@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Offline native historical Bundler input binding, installation and ABI execution."""
+import argparse
 import base64
 import hashlib
 import io
@@ -12,15 +13,28 @@ import tarfile
 import tempfile
 
 root = Path(__file__).resolve().parents[1]
-tools, repository, catalog = map(Path, sys.argv[1:4])
-expected_ruby = sys.argv[4] if len(sys.argv) > 4 else '2.5.8'
-expected_bundler = sys.argv[5] if len(sys.argv) > 5 else '1.17.3'
-extra_gem_path = sys.argv[6] if len(sys.argv) > 6 else ''
-versionless = '--versionless' in sys.argv[7:]
-patchlevel, gem_version = {'1.8.7': (374, '2.6.14'), '2.5.8': (224, '3.1.2')}[expected_ruby]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('tools', type=Path)
+parser.add_argument('repository', type=Path)
+parser.add_argument('catalog', type=Path)
+parser.add_argument('expected_ruby', nargs='?', default='2.5.8')
+parser.add_argument('expected_bundler', nargs='?', default='1.17.3')
+parser.add_argument('extra_gem_path', nargs='?', default='')
+parser.add_argument('--versionless', action='store_true')
+parser.add_argument('--rubygems-version')
+parser.add_argument('--no-ruby-dsl', action='store_true')
+args = parser.parse_args()
+tools, repository, catalog = args.tools, args.repository, args.catalog
+expected_ruby, expected_bundler = args.expected_ruby, args.expected_bundler
+extra_gem_path, versionless = args.extra_gem_path, args.versionless
+patchlevel, default_gem_version = {'1.8.7': (374, '2.6.14'), '2.5.8': (224, '3.1.2')}[expected_ruby]
+gem_version = args.rubygems_version or default_gem_version
 with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     project = Path(temporary)
-    manifest = 'source "https://unreachable.invalid"\nruby "' + expected_ruby + '"\ngem "historical_greeting", ">= 99"\n'
+    ruby_declaration = '' if args.no_ruby_dsl else 'ruby "' + expected_ruby + '"\n'
+    manifest = 'source "https://unreachable.invalid"\n' + ruby_declaration + 'gem "historical_greeting", ">= 99"\n'
+    if args.no_ruby_dsl:
+        (project / '.ruby-version').write_text(expected_ruby + '\n')
     (project / 'Gemfile').write_text(manifest)
     environment = dict(os.environ, HOME=str(project),
         PATH=str(tools / 'bin') + ':' + os.environ['PATH'],

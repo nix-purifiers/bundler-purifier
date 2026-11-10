@@ -348,7 +348,7 @@ module BundlerPurifier
   # The selected consumer SDK reports its own identity and command ABI.
   # The host Ruby running this CLI must never stand in for that SDK.
   def native_bundler_capabilities(env = {})
-    code = 'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; require "bundler/cli"; puts [Bundler::VERSION, Bundler::CLI.instance_methods.map { |name| name.to_s }.include?("lock") ? "lock" : "install"].join("|")'
+    code = 'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; require "bundler/cli"; puts [Bundler::VERSION, Bundler::CLI.instance_methods.map { |name| name.to_s }.include?("lock") && (defined?(Bundler::SourceList) || !defined?(Bundler::Definition)) ? "lock" : "install"].join("|")'
     out, status = Open3.capture2(env, File.join(lock_ruby_bindir, "ruby"), "-e", code)
     fail!("could not inspect the selected native Bundler SDK") unless status.success?
     version, command = out.strip.split("|")
@@ -364,6 +364,12 @@ module BundlerPurifier
     end
     fail!("#{lock_name} bundlerVersion conflicts with native BUNDLED WITH; recapture with the intended native SDK") if marker && recorded && marker != recorded
     marker || recorded || fail!("Gemfile.lock has no BUNDLED WITH and #{lock_name} lacks bundlerVersion; recapture with the intended native SDK using bundler-purifier lock --force")
+  end
+
+  def native_gem_install_flags
+    help, status = Open3.capture2(File.join(lock_ruby_bindir, "gem"), "help", "install")
+    fail!("could not inspect the selected native RubyGems install command") unless status.success?
+    help.include?("--no-document") || help.include?("--[no-]document") ? ["--no-document"] : ["--no-rdoc", "--no-ri"]
   end
 
   def native_bundle!(env, *arguments, persist_lock: false)
@@ -542,9 +548,13 @@ module BundlerPurifier
     file = "bundler-#{version}.gem"
     fetched = File.join(state, "bundler-fetch")
     FileUtils.mkdir_p(fetched)
-    run!(env, "gem", "fetch", "bundler", "--version", version, "--source", "https://rubygems.org/", chdir: fetched)
     path = File.join(fetched, file)
-    fail!("gem fetch did not write #{file}") unless File.file?(path)
+    # Fetch exact SDK bytes through the host helper, without asking an EOL
+    # client to load today's complete registry index. Identity comes from
+    # the observed native SDK, and the consumer still installs it natively.
+    File.binwrite(path, Gem::RemoteFetcher.fetcher.fetch_path("https://rubygems.org/gems/#{file}"))
+    spec = Gem::Package.new(path).spec
+    fail!("downloaded Bundler gem does not match the selected native SDK") unless spec.name == "bundler" && spec.version.to_s == version
     sri(path)
   end
 
@@ -662,7 +672,7 @@ module BundlerPurifier
          chdir: root)
 
     bundler_home = File.join(state_dir, "bundler")
-    run!({}, "nix", "develop", shell, "--command", "gem", "install", "--local", "--no-document",
+    run!({}, "nix", "develop", shell, "--command", "gem", "install", "--local", *native_gem_install_flags,
          "--install-dir", bundler_home, "--bindir", File.join(bundler_home, "bin"),
          File.join(built, "bundler-#{bundler_version}.gem"), chdir: root)
     locked_env = { "GEM_HOME" => bundler_home, "GEM_PATH" => bundler_home,

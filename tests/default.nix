@@ -369,6 +369,13 @@ in
       bundlerVersion = "1.3.6";
       bundlerHash = "sha256-K6aoziNnsuOCuWkeb7qAidtAu0u4gFTe0a3yYWy6El8=";
     };
+    native10 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubygemsVersion = "1.8.30";
+      rubygemsHash = "sha256-6fXjBSxduNG/d8KmUEftW9mXe3PA7ZCMQGYQIQWRhUw=";
+      bundlerVersion = "1.0.22";
+      bundlerHash = "sha256-wOcoWqMSJAdHs6Ox3ll4agSVCkJA7GyWudDv3VjU7EM=";
+    };
     project = build {
       src = ./fixtures/ruby18;
       ruby = native.sdk;
@@ -378,6 +385,11 @@ in
   in
   {
     ruby18-sdk = native.sdk;
+    ruby18-bundler10-sdk = native10.sdk;
+    ruby18-bundler10-cli = cli.override {
+      projectRuby = native10.sdk;
+      projectNativeBuildInputs = [ native10.compiler ];
+    };
     ruby18-bundler117-gems = native.gems;
     ruby18-bundler116-sdk = native116.sdk;
     ruby18-bundler110-sdk = native110.sdk;
@@ -415,6 +427,14 @@ in
     ruby18-app = project.packages.app;
     ruby18-native-extension = project.tests;
     ruby18-repository = project.release.projections.rubygems;
+    ruby18-bundler10-input-composition =
+      pkgs.runCommand "ruby187-gems1830-bundler10-input-composition"
+        { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native10.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog} 1.8.7 1.0.22 ${native.gems}/gems --versionless --rubygems-version 1.8.30 --no-ruby-dsl
+          touch $out
+        '';
     ruby18-bundler136-input-composition =
       pkgs.runCommand "ruby187-bundler136-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
         ''

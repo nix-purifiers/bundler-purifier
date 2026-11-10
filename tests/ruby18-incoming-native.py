@@ -25,6 +25,8 @@ parser.add_argument('--bundler-hash', default='sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq
 parser.add_argument('--sdk-check', default='ruby18-sdk')
 parser.add_argument('--versionless', action='store_true')
 parser.add_argument('--extra-gem-path', type=Path)
+parser.add_argument('--rubygems-version', default='2.6.14')
+parser.add_argument('--no-ruby-dsl', action='store_true')
 args = parser.parse_args()
 work = args.results.resolve() if args.results else Path(tempfile.mkdtemp(prefix='ruby18-incoming-'))
 work.mkdir(parents=True, exist_ok=args.results is None)
@@ -92,7 +94,7 @@ try:
     versions = run('native-versions', [args.sdk / 'bin/ruby', '-e',
         'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; puts [RUBY_VERSION,RUBY_PATCHLEVEL,Gem::VERSION,Bundler::VERSION,Gem.ruby,RbConfig::CONFIG.fetch("prefix")].join("|")'])
     version_fields = versions.strip().split('|')
-    assert version_fields[:4] == ['1.8.7', '374', '2.6.14', args.bundler_version], versions
+    assert version_fields[:4] == ['1.8.7', '374', args.rubygems_version, args.bundler_version], versions
     actual_ruby, actual_prefix = version_fields[4:]
     assert Path(actual_ruby).is_file()
     receipt['actualRubyExecutableSha256'] = hashlib.sha256(Path(actual_ruby).read_bytes()).hexdigest()
@@ -131,7 +133,10 @@ try:
     capture_server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), EmptyRegistry)
     threading.Thread(target=capture_server.serve_forever, daemon=True).start()
     capture_host = f'http://127.0.0.1:{capture_server.server_port}'
-    manifest = f'source "{capture_host}"\nruby "1.8.7"\ngemspec\n'
+    ruby_declaration = '' if args.no_ruby_dsl else 'ruby "1.8.7"\n'
+    manifest = f'source "{capture_host}"\n' + ruby_declaration + 'gemspec\n'
+    if args.no_ruby_dsl:
+        (project / '.ruby-version').write_text('1.8.7\n')
     gemspec = '''Gem::Specification.new do |s|
   s.name="incoming_consumer"; s.version="1.0.0"; s.authors=["fixture"]
   s.summary="Ruby 1.8 incoming Nix dependency proof"; s.license="MIT"
@@ -177,7 +182,7 @@ end
     receipt['captureRegistryStoppedBeforeOfflineExecution'] = True
     code = 'require "incoming_consumer"; abort unless IncomingConsumer.answer==42; puts "INCOMING|#{RUBY_VERSION}|#{Gem::VERSION}|#{Bundler::VERSION}|42"'
     output = run('wrapper-runtime', [args.cli / 'bin/bundle', 'exec', 'ruby', '-Ilib', '-e', code], project)
-    assert output == f'INCOMING|1.8.7|2.6.14|{args.bundler_version}|42\n', output
+    assert output == f'INCOMING|1.8.7|{args.rubygems_version}|{args.bundler_version}|42\n', output
     expression = work / 'consumer.nix'
     expression.write_text('''let
   f = builtins.getFlake "path:''' + source + '''";
@@ -305,7 +310,7 @@ in build {
         publish = [command, 'publish', '--host', host]
         run('publish-projected', publish, project, publication)
         assert stored == archives
-        assert publication_agents and all(agent.startswith('RubyGems/2.6.14') for agent in publication_agents), publication_agents
+        assert publication_agents and all(agent.startswith('RubyGems/' + args.rubygems_version) for agent in publication_agents), publication_agents
         receipt['publicationNativeUserAgents'] = publication_agents
         count = len(uploads)
         run('publish-dedup', publish, project, publication)
@@ -315,7 +320,9 @@ in build {
         ordinary_env = dict(env, GEM_HOME=str(ordinary / 'gems'), GEM_PATH=str(ordinary / 'gems'))
         root_archive = next(name for name in archives if name.startswith('incoming_consumer-'))
         version = root_archive[len('incoming_consumer-'):-len('.gem')]
-        run('ordinary-install', [args.sdk / 'bin/gem', 'install', '--no-document', '--clear-sources', '--prerelease',
+        gem_help = run('native-gem-install-help', [args.sdk / 'bin/gem', 'help', 'install'], ordinary, ordinary_env)
+        doc_flags = ['--no-document'] if '--no-document' in gem_help or '--[no-]document' in gem_help else ['--no-rdoc', '--no-ri']
+        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, '--clear-sources', '--prerelease',
             '--source', host, 'incoming_consumer', '--version', version], ordinary, ordinary_env)
         ordinary_code = r'''require "incoming_consumer"
 require "digest/sha2"
@@ -329,7 +336,7 @@ abort "not installed ordinary gem" unless native.start_with?(ENV.fetch("GEM_HOME
 puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
 '''
         ordinary_output = run('ordinary-runtime', [args.sdk / 'bin/ruby', '-e', ordinary_code], ordinary, ordinary_env)
-        assert 'ORDINARY|1.8.7|374|2.6.14|42' in ordinary_output.splitlines()
+        assert f'ORDINARY|1.8.7|374|{args.rubygems_version}|42' in ordinary_output.splitlines()
         observed = [line.split('|')[1:] for line in ordinary_output.splitlines() if line.startswith('NATIVE|')]
         assert len(observed) == 1
         native_path, native_hash = observed[0]

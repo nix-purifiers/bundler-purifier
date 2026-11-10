@@ -351,6 +351,14 @@ let
           bundle() { ruby ${integrationTools}/native_bundle_command.rb "$@"; }
         ''
     }
+    native_gem_install() {
+      local install_help
+      install_help=$(gem help install)
+      case "$install_help" in
+        *"--no-document"*|*"--[no-]document"*) gem install --local --no-document "$@" ;;
+        *) gem install --local --no-rdoc --no-ri "$@" ;;
+      esac
+    }
     mkdir -p "$HOME" "$GEM_HOME" vendor
     rm -rf vendor/cache
     # Bundler copies what it installs from the cache and leaves marker
@@ -366,7 +374,7 @@ let
     done
     # The locked Bundler, installed from the cache, so the build runs the
     # Bundler version of BUNDLED WITH and Bundler has nothing to fetch.
-    gem install --local --no-document --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" \
+    native_gem_install --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" \
       vendor/cache/bundler-${lock.bundler}.gem
     bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local cache_path vendor/cache
     ${lib.optionalString (selectedInputs != [ ]) ''
@@ -472,7 +480,7 @@ let
         # The locked Bundler, for the `bundle` wrapper to run the app with.
         # Native install may prune its writable cache, including Bundler's
         # own archive. The exact hashed SDK input remains in the Nix cache.
-        gem install --local --no-document --install-dir .bundle/purifier/bundler \
+        native_gem_install --install-dir .bundle/purifier/bundler \
           ${gemCache}/bundler-${lock.bundler}.gem
         # Older Bundler gems mark ERB executable templates as executable.
         # They are generator data, not scripts for fixup to interpret.
