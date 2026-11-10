@@ -470,8 +470,10 @@ let
       installPhase = ''
         runHook preInstall
         # The locked Bundler, for the `bundle` wrapper to run the app with.
+        # Native install may prune its writable cache, including Bundler's
+        # own archive. The exact hashed SDK input remains in the Nix cache.
         gem install --local --no-document --install-dir .bundle/purifier/bundler \
-          vendor/cache/bundler-${lock.bundler}.gem
+          ${gemCache}/bundler-${lock.bundler}.gem
         # Older Bundler gems mark ERB executable templates as executable.
         # They are generator data, not scripts for fixup to interpret.
         for template in .bundle/purifier/bundler/gems/bundler-*/lib/bundler/templates/Executable*; do
