@@ -276,6 +276,25 @@ class BundlerPurifierTest < Minitest::Test
     end
   end
 
+  def test_native_bundler_marker_and_optional_metadata_must_agree
+    write("Gemfile.lock", LOCKFILE.sub("2.6.9", "1.17.3"))
+    assert_equal "1.17.3", BP.locked_bundler_version({})
+    assert_equal "1.17.3", BP.locked_bundler_version("bundlerVersion" => "1.17.3")
+    _, error = capture_io do
+      assert_raises(SystemExit) { BP.locked_bundler_version("bundlerVersion" => "1.3.6") }
+    end
+    assert_includes error, "conflicts with native BUNDLED WITH"
+  end
+
+  def test_versionless_native_lock_requires_explicit_identity
+    write("Gemfile.lock", LOCKFILE.sub(/\nBUNDLED WITH\n\s+[^\n]+\n?/, "\n"))
+    assert_equal "1.3.6", BP.locked_bundler_version("bundlerVersion" => "1.3.6")
+    _, error = capture_io do
+      assert_raises(SystemExit) { BP.locked_bundler_version({}) }
+    end
+    assert_includes error, "recapture with the intended native SDK"
+  end
+
   def test_check_platforms_warns_without_a_linux_platform
     _, err = capture_io { BP.check_platforms(Bundler::LockfileParser.new(LOCKFILE.sub("  ruby\n", "  arm64-darwin\n"))) }
     assert_match(/bundle lock --add-platform x86_64-linux aarch64-linux/, err)

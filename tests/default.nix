@@ -108,6 +108,11 @@ let
       };
     };
   damaged = {
+    bundlerMismatch = {
+      lockFile = builtins.toFile "bundler-purifier.lock.json" (
+        builtins.toJSON (withContentHash (libraryLock // { bundlerVersion = "1.3.6"; }))
+      );
+    };
     # A lock made from another Gemfile.lock: its definition hash differs,
     # with a contentHash that matches it. The CLI side changes the copied
     # Gemfile.lock instead.
@@ -207,6 +212,7 @@ in
   };
   inherit cli;
 
+  conformance-bundler-mismatch = failsWith "bundlerMismatch" "bundlerVersion conflicts with native BUNDLED WITH";
   conformance-stale = failsWith "stale" "run bundler-purifier lock";
   conformance-tampered = failsWith "tampered" "was changed by hand";
   conformance-missing = failsWith "missing" "run bundler-purifier lock";
@@ -358,6 +364,11 @@ in
       bundlerVersion = "1.10.6";
       bundlerHash = "sha256-+ykz0SMEzsddrHW5OhywRdoCaykebGWwl0TOuQB2n+4=";
     };
+    native136 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      bundlerVersion = "1.3.6";
+      bundlerHash = "sha256-K6aoziNnsuOCuWkeb7qAidtAu0u4gFTe0a3yYWy6El8=";
+    };
     project = build {
       src = ./fixtures/ruby18;
       ruby = native.sdk;
@@ -369,6 +380,11 @@ in
     ruby18-sdk = native.sdk;
     ruby18-bundler116-sdk = native116.sdk;
     ruby18-bundler110-sdk = native110.sdk;
+    ruby18-bundler136-sdk = native136.sdk;
+    ruby18-bundler136-cli = cli.override {
+      projectRuby = native136.sdk;
+      projectNativeBuildInputs = [ native136.compiler ];
+    };
     ruby18-bundler116-cli = cli.override {
       projectRuby = native116.sdk;
       projectNativeBuildInputs = [ native116.compiler ];
@@ -398,6 +414,13 @@ in
     ruby18-app = project.packages.app;
     ruby18-native-extension = project.tests;
     ruby18-repository = project.release.projections.rubygems;
+    ruby18-bundler136-input-composition =
+      pkgs.runCommand "ruby187-bundler136-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native136.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog} 1.8.7 1.3.6 ${native.gems}/gems --versionless
+          touch $out
+        '';
     ruby18-bundler110-input-composition =
       pkgs.runCommand "ruby187-bundler110-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
         ''

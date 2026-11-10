@@ -213,11 +213,20 @@ if PurifierGemInputs::LEGACY_SOURCE_ARRAY
       remotes.map { |remote| remote.to_s.sub(/\/$/, "") }
     end
 
+    def purifier_nix_repository?
+      remotes.any? do |remote|
+        PurifierGemInputs::PACKAGES.values.any? do |package|
+          !package["intrinsic"] && remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "")
+        end
+      end
+    end
+
     def hash
-      purifier_repository_identity.hash
+      purifier_nix_repository? ? purifier_repository_identity.hash : super
     end
 
     def eql?(other)
+      return super unless purifier_nix_repository? || (other.is_a?(Bundler::Source::Rubygems) && other.purifier_nix_repository?)
       other.is_a?(Bundler::Source::Rubygems) && purifier_repository_identity == other.purifier_repository_identity
     end
 

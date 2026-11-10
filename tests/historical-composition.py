@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Offline native Bundler 1.17 input binding, installation and ABI execution."""
+"""Offline native historical Bundler input binding, installation and ABI execution."""
 import base64
 import hashlib
 import io
@@ -16,6 +16,7 @@ tools, repository, catalog = map(Path, sys.argv[1:4])
 expected_ruby = sys.argv[4] if len(sys.argv) > 4 else '2.5.8'
 expected_bundler = sys.argv[5] if len(sys.argv) > 5 else '1.17.3'
 extra_gem_path = sys.argv[6] if len(sys.argv) > 6 else ''
+versionless = '--versionless' in sys.argv[7:]
 patchlevel, gem_version = {'1.8.7': (374, '2.6.14'), '2.5.8': (224, '3.1.2')}[expected_ruby]
 with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     project = Path(temporary)
@@ -43,7 +44,10 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     entries = json.loads(catalog.read_text())['packages']
     for entry in entries:
         assert entry['version'].encode() in lock
-    assert ('BUNDLED WITH\n   ' + expected_bundler).encode() in lock
+    if versionless:
+        assert b'BUNDLED WITH' not in lock
+    else:
+        assert ('BUNDLED WITH\n   ' + expected_bundler).encode() in lock
     run('lock', '--local')
     assert (project / 'Gemfile.lock').read_bytes() == lock
     run('install', '--local')

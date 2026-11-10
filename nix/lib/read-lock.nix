@@ -258,7 +258,31 @@ let
     }
     // lib.optionalAttrs (platform != null) { systems = systemsOf (lib.head platform); };
 
-  bundler = gemfileLockData.bundledWith;
+  recordedBundler = purifierLock.bundlerVersion or null;
+  validRecordedBundler =
+    builtins.isString recordedBundler && builtins.match "[0-9][0-9A-Za-z.+-]*" recordedBundler != null;
+  bundler =
+    if gemfileLockData.bundledWith != null then
+      gemfileLockData.bundledWith
+    else if validRecordedBundler then
+      recordedBundler
+    else
+      null;
+  bundlerProblems = lib.optionals (lockProblems == [ ] && hasGemfileLock) (
+    lib.optional (recordedBundler != null && !validRecordedBundler)
+      "bundler-purifier: ${lockName} has an invalid bundlerVersion. Recapture with the intended native SDK: bundler-purifier lock --force."
+    ++
+      lib.optional
+        (
+          gemfileLockData.bundledWith != null
+          && recordedBundler != null
+          && recordedBundler != gemfileLockData.bundledWith
+        )
+        "bundler-purifier: ${lockName} bundlerVersion conflicts with native BUNDLED WITH. Recapture with the intended native SDK."
+    ++
+      lib.optional (bundler == null)
+        "bundler-purifier: Gemfile.lock has no BUNDLED WITH and ${lockName} lacks bundlerVersion. Recapture with the intended native SDK: bundler-purifier lock --force."
+  );
   bundlerFile = "bundler-${bundler}.gem";
 
   rawFiles =
@@ -328,7 +352,12 @@ let
       "bundler-purifier: ${lockName} lacks ${(lib.head incomplete).missing}, which Gemfile.lock needs. Run `bundler-purifier lock`.";
 
   problems =
-    lockProblems ++ gemfileLockProblems ++ externalProblems ++ staleProblems ++ missingProblems;
+    lockProblems
+    ++ gemfileLockProblems
+    ++ bundlerProblems
+    ++ externalProblems
+    ++ staleProblems
+    ++ missingProblems;
 
   gems = lib.concatMap (
     source:

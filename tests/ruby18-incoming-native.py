@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Ruby 1.8 incoming Nix gems, pure build and exact projected CLI publication."""
 import argparse
+import base64
 import hashlib
 import gzip
 import http.server
@@ -22,6 +23,8 @@ parser.add_argument('--results', type=Path)
 parser.add_argument('--bundler-version', default='1.17.3')
 parser.add_argument('--bundler-hash', default='sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I=')
 parser.add_argument('--sdk-check', default='ruby18-sdk')
+parser.add_argument('--versionless', action='store_true')
+parser.add_argument('--extra-gem-path', type=Path)
 args = parser.parse_args()
 work = args.results.resolve() if args.results else Path(tempfile.mkdtemp(prefix='ruby18-incoming-'))
 work.mkdir(parents=True, exist_ok=args.results is None)
@@ -38,6 +41,10 @@ temporary.mkdir()
 env = {key: value for key, value in os.environ.items() if not key.startswith(('BUNDLE_', 'GEM_', 'RUBY'))}
 env.update(HOME=str(home), TMPDIR=str(temporary), LC_ALL='C', PATH=f'{args.sdk}/bin:{args.cli}/bin:' + os.environ['PATH'],
            BUNDLE_USER_HOME=str(work / 'bundle-home'))
+if args.versionless:
+    env['BUNDLER_PURIFIER_BUNDLER_VERSION'] = args.bundler_version
+if args.extra_gem_path:
+    env['GEM_PATH'] = str(args.extra_gem_path)
 
 
 def save():
@@ -83,7 +90,7 @@ def run(label, command, cwd=ROOT, environment=None, success=True):
 
 try:
     versions = run('native-versions', [args.sdk / 'bin/ruby', '-e',
-        'require "bundler"; puts [RUBY_VERSION,RUBY_PATCHLEVEL,Gem::VERSION,Bundler::VERSION,Gem.ruby,RbConfig::CONFIG.fetch("prefix")].join("|")'])
+        'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; puts [RUBY_VERSION,RUBY_PATCHLEVEL,Gem::VERSION,Bundler::VERSION,Gem.ruby,RbConfig::CONFIG.fetch("prefix")].join("|")'])
     version_fields = versions.strip().split('|')
     assert version_fields[:4] == ['1.8.7', '374', '2.6.14', args.bundler_version], versions
     actual_ruby, actual_prefix = version_fields[4:]
@@ -149,10 +156,17 @@ end
     lock_bytes = (project / 'bundler-purifier.lock.json').read_bytes()
     captured = json.loads(lock_bytes)
     assert captured['ruby'] == '1.8.7'
-    assert ('BUNDLED WITH\n   ' + args.bundler_version).encode() in native_lock
+    if args.versionless:
+        assert b'BUNDLED WITH' not in native_lock
+        assert captured['bundlerVersion'] == args.bundler_version
+    else:
+        assert ('BUNDLED WITH\n   ' + args.bundler_version).encode() in native_lock
+        assert 'bundlerVersion' not in captured
     assert captured['bundlerHash'] == args.bundler_hash
     assert len(captured['projectInputs']) == 1 and not captured.get('gemHashes')
     assert 'narHash' in json.dumps(captured['projectInputs'])
+    run('no-op-capture', [command, 'lock'], project)
+    assert (project / 'bundler-purifier.lock.json').read_bytes() == lock_bytes
     run('relock', [command, 'lock', '--force'], project)
     assert (project / 'bundler-purifier.lock.json').read_bytes() == lock_bytes
     run('prefetch', [command, 'prefetch'], project)
@@ -184,6 +198,61 @@ in build {
     receipt['outputInfo'] = output_info
     derivations = sorted({info['deriver'] for info in output_info.values()})
     run('derivations', ['nix', 'derivation', 'show', *derivations])
+    if args.versionless:
+        if args.extra_gem_path:
+            higher_env = dict(env)
+            higher_env.pop('BUNDLER_PURIFIER_BUNDLER_VERSION', None)
+            higher = run('higher-sdk-visible', [args.sdk / 'bin/ruby', '-e',
+                'require "bundler"; puts Bundler::VERSION'], project, higher_env)
+            assert higher.strip() == '1.17.3', higher
+            wrong_sdk = dict(env, BUNDLER_PURIFIER_BUNDLER_VERSION='1.17.3')
+            failure = run('reject-actual-higher-sdk', [command, 'prefetch'], project, wrong_sdk, success=False)
+            assert 'selected native Bundler SDK 1.17.3 conflicts with recorded bundlerVersion' in failure
+
+        def write_variant(value):
+            value.pop('contentHash', None)
+            canonical = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+            value['contentHash'] = 'sha256-' + base64.b64encode(hashlib.sha256(canonical).digest()).decode()
+            (project / 'bundler-purifier.lock.json').write_text(json.dumps(value, indent=2) + '\n')
+
+        for label, version, expected in [
+                ('missing-fallback', None, 'lacks bundlerVersion'),
+                ('wrong-metadata', '1.17.3', 'conflicts with recorded bundlerVersion')]:
+            variant = dict(captured)
+            if version is None:
+                variant.pop('bundlerVersion')
+            else:
+                variant['bundlerVersion'] = version
+            try:
+                write_variant(variant)
+                failure = run('reject-' + label, [command, 'prefetch'], project, success=False)
+                assert expected in failure, failure
+                failure = run('pure-reject-' + label, ['nix-build', expression, '-A', 'tests', '--no-out-link'], success=False)
+                assert ('lacks bundlerVersion' in failure if version is None else 'hash mismatch' in failure), failure
+            finally:
+                (project / 'bundler-purifier.lock.json').write_bytes(lock_bytes)
+
+        # Deliberate corruption negative: both independently readable SDK
+        # identities must agree. The positive native lock has no marker.
+        try:
+            (project / 'Gemfile.lock').write_bytes(native_lock + b'\nBUNDLED WITH\n   1.17.3\n')
+            variant = dict(captured)
+            definitions = sorted(['Gemfile', 'Gemfile.lock', 'incoming_consumer.gemspec'])
+            digest = hashlib.sha256()
+            for name in definitions:
+                data = (project / name).read_bytes()
+                digest.update(f'{name}\n{len(data)}\n'.encode() + data + b'\n')
+            variant['definitionHash'] = 'sha256-' + base64.b64encode(digest.digest()).decode()
+            write_variant(variant)
+            failure = run('reject-marker-conflict', [command, 'prefetch'], project, success=False)
+            assert 'bundlerVersion conflicts with native BUNDLED WITH' in failure, failure
+            failure = run('pure-reject-marker-conflict', ['nix-build', expression, '-A', 'tests', '--no-out-link'], success=False)
+            assert 'bundlerVersion conflicts with native BUNDLED WITH' in failure, failure
+        finally:
+            (project / 'Gemfile.lock').write_bytes(native_lock)
+            (project / 'bundler-purifier.lock.json').write_bytes(lock_bytes)
+        receipt['versionlessIdentityNegatives'] = ['missing-fallback', 'wrong-metadata', 'marker-conflict']
+
     archives = {path.name: path.read_bytes() for path in (repository / 'gems').glob('*.gem')}
     assert len(archives) == 3
     by_digest = {hashlib.sha512(data).digest(): name for name, data in archives.items()}
