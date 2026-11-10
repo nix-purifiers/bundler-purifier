@@ -121,7 +121,7 @@ try:
     capture_server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), EmptyRegistry)
     threading.Thread(target=capture_server.serve_forever, daemon=True).start()
     capture_host = f'http://127.0.0.1:{capture_server.server_port}'
-    manifest = f'source "{capture_host}"\nruby "1.8.7"\ngemspec\n' 
+    manifest = f'source "{capture_host}"\nruby "1.8.7"\ngemspec\n'
     gemspec = '''Gem::Specification.new do |s|
   s.name="incoming_consumer"; s.version="1.0.0"; s.authors=["fixture"]
   s.summary="Ruby 1.8 incoming Nix dependency proof"; s.license="MIT"
