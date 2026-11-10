@@ -20,7 +20,12 @@ provided = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_INPUT_VIEWS", "[]")).map do |v
   JSON.parse(File.read(view.fetch("catalog"))).fetch("packages").map { |entry| [entry.fetch("name"), entry.fetch("version")] }
 end.flatten(1)
 owned = Hash[JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).map do |archive|
-  spec = Gem::Package.new(archive).spec
+  spec = if Gem::Package.respond_to?(:new)
+    Gem::Package.new(archive).spec
+  else
+    require "rubygems/format"
+    Gem::Format.from_file_by_path(archive).spec
+  end
   [spec.name, spec.files]
 end]
 roots = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_PROJECT_ROOTS", "[]"))
@@ -68,7 +73,7 @@ selected.values.each do |original|
       FileUtils.mkdir_p(File.dirname(target))
       copy_runtime_file(input, target)
     end
-    if original.default_gem?
+    if original.respond_to?(:default_gem?) && original.default_gem?
       # Default gems live in Ruby's stdlib/architecture directories, rather
       # than the otherwise empty gems/<name>/lib tree.
       original.files.grep(/\.(rb|so|bundle|dll)$/).each do |relative|
@@ -95,7 +100,7 @@ selected.values.each do |original|
       end
     end
     native = !original.extensions.empty?
-    if File.directory?(original.extension_dir)
+    if original.respond_to?(:extension_dir) && File.directory?(original.extension_dir)
       Dir.glob(File.join(original.extension_dir, "**", "*"), File::FNM_DOTMATCH).each do |input|
         next unless File.file?(input)
         relative = input.sub(/\A#{Regexp.escape(original.extension_dir + "/")}/, "")
@@ -120,14 +125,23 @@ selected.values.each do |original|
         next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
         Gem::Requirement.new(">= #{RUBY_VERSION}", "< #{next_release}")
       end
-      spec.metadata = spec.metadata.merge("nix-purifier-ruby-engine" => (defined?(RUBY_ENGINE) ? RUBY_ENGINE : "ruby"),
-                                         "nix-purifier-ruby-version" => RUBY_VERSION)
+      if spec.respond_to?(:metadata)
+        spec.metadata = spec.metadata.merge("nix-purifier-ruby-engine" => (defined?(RUBY_ENGINE) ? RUBY_ENGINE : "ruby"),
+                                           "nix-purifier-ruby-version" => RUBY_VERSION)
+      end
     end
     spec.cert_chain = []
     spec.extra_rdoc_files = spec.extra_rdoc_files.select { |path| File.file?(File.join(directory, path)) }
     spec.test_files = spec.test_files.select { |path| File.file?(File.join(directory, path)) }
     spec.files = Dir.chdir(directory) { Dir.glob("**/*", File::FNM_DOTMATCH).select { |path| File.file?(path) } }
-    filename = Dir.chdir(directory) { Gem::Package.build(spec) }
+    filename = Dir.chdir(directory) do
+      if Gem::Package.respond_to?(:build)
+        Gem::Package.build(spec)
+      else
+        require "rubygems/builder"
+        Gem::Builder.new(spec).build
+      end
+    end
     FileUtils.cp(File.join(directory, filename), File.join(output, filename))
     archives << filename
   end
