@@ -10,6 +10,8 @@ module PurifierNativeEnvironment
   MAX_DOCUMENT = 16 * 1024 * 1024
   MAX_SNAPSHOT = 1024 * 1024
   MAX_RECORDS = 4096
+  MAX_EVIDENCE_ENCODED = 8 * 1024 * 1024
+  MAX_EVIDENCE_DECODED = 6 * 1024 * 1024
 
   class UniqueObject < Hash
     def []=(key, value)
@@ -124,10 +126,24 @@ module PurifierNativeEnvironment
   # and writers retain their own contract and do not pass through this helper.
   def self.validate!(value)
     exact!(value, %w[format schemaVersion interface nativeLockFile contexts sdk manifests snapshots packages rootRequirements], "native resolution")
+    reject!("native environment document exceeds size limit") if JSON.generate(value).bytesize > MAX_DOCUMENT
     reject!("unsupported native environment format") unless value.fetch("format") == "bundler-native-environment" && value.fetch("schemaVersion").is_a?(Integer) && value.fetch("schemaVersion") == 1 && value.fetch("interface") == "environment-v08"
     reject!("pre-lockfile resolution cannot contain a native lockfile") unless value.fetch("nativeLockFile").nil?
     reject!("unsupported native contexts") unless value.fetch("contexts") == ["default"]
     sdk!(value.fetch("sdk"))
+    evidence = %w[manifests snapshots].flat_map do |key|
+      list!(value.fetch(key), key)
+      value.fetch(key)
+    end
+    encoded_total = 0
+    decoded_total = 0
+    evidence.each do |record|
+      exact!(record, %w[path size sha256 base64], "native snapshot")
+      reject!("invalid bounded native snapshot") unless record.fetch("base64").is_a?(String) && record.fetch("size").is_a?(Integer) && record.fetch("size").between?(0, MAX_SNAPSHOT)
+      encoded_total += record.fetch("base64").bytesize
+      decoded_total += record.fetch("size")
+    end
+    reject!("native evidence exceeds aggregate size limit") if encoded_total > MAX_EVIDENCE_ENCODED || decoded_total > MAX_EVIDENCE_DECODED
     %w[manifests snapshots].each do |key|
       records = value.fetch(key)
       list!(records, key)
@@ -178,6 +194,18 @@ module PurifierNativeEnvironment
         reject!("incomplete native runtime closure") unless packages.any? { |candidate| candidate.fetch("name") == dependency.fetch("name") }
       end
     end
+    reachable = []
+    pending = roots.map { |root| root.fetch("name") }
+    until pending.empty?
+      name = pending.pop
+      next if reachable.include?(name)
+      reachable << name
+      package = packages.find { |candidate| candidate.fetch("name") == name }
+      package.fetch("dependencies").each do |dependency|
+        pending << dependency.fetch("name") if dependency.fetch("type") == "runtime"
+      end
+    end
+    reject!("native selected closure contains an unrelated package") unless reachable.sort == packages.map { |package| package.fetch("name") }.sort
     value
   end
 

@@ -131,6 +131,29 @@ let
       ]) item.dependencies
     );
   root = item: exact [ "name" "requirements" ] item && scalar item.name && clauses item.requirements;
+  evidence = value.manifests ++ value.snapshots;
+  aggregate =
+    list value.manifests
+    && list value.snapshots
+    && lib.all (
+      item:
+      builtins.isAttrs item
+      && builtins.isString (item.base64 or null)
+      && builtins.isInt (item.size or null)
+      && item.size >= 0
+      && item.size <= 1048576
+    ) evidence
+    && lib.foldl' (sum: item: sum + builtins.stringLength item.base64) 0 evidence <= 8388608
+    && lib.foldl' (sum: item: sum + item.size) 0 evidence <= 6291456;
+  reachable = builtins.genericClosure {
+    startSet = map (entry: { key = entry.name; }) value.rootRequirements;
+    operator =
+      item:
+      let
+        selected = lib.findFirst (entry: entry.name == item.key) null value.packages;
+      in
+      map (dep: { key = dep.name; }) (lib.filter (dep: dep.type == "runtime") selected.dependencies);
+  };
   valid =
     exact [
       "format"
@@ -144,6 +167,8 @@ let
       "packages"
       "rootRequirements"
     ] value
+    && aggregate
+    && builtins.stringLength (builtins.toJSON value) <= 16777216
     && value.format == "bundler-native-environment"
     && builtins.isInt value.schemaVersion
     && value.schemaVersion == 1
@@ -179,7 +204,8 @@ let
       lib.all (
         dep: dep.type != "runtime" || lib.any (selected: selected.name == dep.name) value.packages
       ) entry.dependencies
-    ) value.packages;
+    ) value.packages
+    && builtins.length reachable == builtins.length value.packages;
 in
 {
   inherit valid;

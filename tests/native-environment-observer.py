@@ -46,6 +46,7 @@ with tempfile.TemporaryDirectory(prefix="native-environment-observer-") as tempo
         ("ambiguous-native-lock", lambda project: (project / "Gemfile.lock").write_text("")),
         ("missing-cache-archive", lambda project: next(project.glob("vendor/gems/ruby/1.8/cache/*.gem")).unlink()),
         ("ordinary-constraint", lambda project: (project / "Gemfile").write_text('gem "incoming_consumer", ">= 999"\n')),
+        ("unrelated-native-selection", lambda project: (project / "Gemfile").write_text("# no root requirements\n")),
         ("unknown-context", lambda project: (project / "Gemfile").write_text('only :test do\n' + (project / "Gemfile").read_text() + 'end\n')),
     ]:
         project = temporary / label

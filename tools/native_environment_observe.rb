@@ -89,6 +89,16 @@ module PurifierEnvironmentObservation
         "sourceKind" => "verified-cache",
         "archiveHash" => "sha256-" + [Digest::SHA256.digest(File.open(archive, "rb") { |file| file.read })].pack("m").delete("\n"))
     end
+    reachable = []
+    pending = roots.map { |dependency| dependency["name"] }
+    until pending.empty?
+      name = pending.pop
+      next if reachable.include?(name)
+      reachable << name
+      selected = specs[name]
+      selected.dependencies.each { |dependency| pending << dependency.name if dependency.type == :runtime }
+    end
+    fail!("native selected closure contains an unrelated package") unless reachable.sort == names.sort
     {"packages" => packages.sort_by { |package| package["name"] },
      "rootRequirements" => roots.sort_by { |dependency| dependency["name"] }}
   end

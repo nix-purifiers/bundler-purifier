@@ -83,6 +83,8 @@ changed("unknown-source", lambda v: v["packages"][0].update(sourceKind="git"))
 changed("missing-root", lambda v: v["rootRequirements"][0].update(name="absent"))
 changed("missing-runtime", lambda v: v["packages"][0].update(dependencies=[dict(name="absent", requirements=[">= 0"], type="runtime")]))
 changed("duplicate-root", lambda v: v["rootRequirements"].append(v["rootRequirements"][0]))
+changed("extra-unrelated-package", lambda v: v["packages"].append(dict(v["packages"][0], name="unrelated")))
+changed("aggregate-overflow", lambda v: v.update(snapshots=[snapshot(f"file-{i}.rb", b"#" * 1048576) for i in range(7)]))
 
 host = '''require ARGV.shift
 begin
