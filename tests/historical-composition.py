@@ -108,6 +108,8 @@ puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
         assert len(parsers) == 1
         assert hashlib.sha256(payload.extractfile(parsers[0]).read()).hexdigest() == native_hash
     checksum_lines = re.findall(rb'(?m)^[ \t]+([^ \n]+) \(([^)]+)\) sha256=([0-9a-f]{64})$', lock)
+    if int(expected_bundler.split('.')[0]) >= 4:
+        assert checksum_lines, 'native Bundler 4 must retain archive checksum coverage'
     if checksum_lines:
         by_archive = {Path(entry['archive']).name: entry for entry in entries}
         for name, version, digest in checksum_lines:
