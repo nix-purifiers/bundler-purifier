@@ -114,14 +114,15 @@ jobs:
               --results "$RUNNER_TEMP/ruby18-incoming-${epoch}-evidence"
           done
 
-      - name: Earlier Ruby 1.8.4, 1.8.6 and 1.9.0 through 1.9.2 native incoming composition
+      - name: Earlier Ruby 1.8.4 through 1.8.6 and 1.9.0 through 1.9.2 native incoming composition
         if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
         run: |
-          for point in 184 186 190 191 192; do
+          for point in 184 185 186 190 191 192; do
             extra=()
             case "$point" in
               184) version=1.8.4; patchlevel=absent; gems=1.3.5; bundler=0.9.9; hash='sha256-A4vNaw2V7Muoyu3Pa8+sGRiON6CabdjctMhywiL6T0Q='; updatecheck=rubygems135-update; extra=(--versionless --no-ruby-dsl --yaml-sdk --publisher-plugin gemcutter-0.3.0) ;;
+              185) version=1.8.5; patchlevel=231; gems=1.3.5; bundler=0.9.9; hash='sha256-A4vNaw2V7Muoyu3Pa8+sGRiON6CabdjctMhywiL6T0Q='; updatecheck=rubygems135-update; extra=(--versionless --no-ruby-dsl --yaml-sdk --publisher-plugin gemcutter-0.3.0) ;;
               186) version=1.8.6; patchlevel=420; gems=1.3.7; bundler=1.0.22; hash='sha256-wOcoWqMSJAdHs6Ox3ll4agSVCkJA7GyWudDv3VjU7EM='; updatecheck=rubygems137-update; extra=(--versionless --no-ruby-dsl) ;;
               190) version=1.9.0; patchlevel=0; gems=1.3.7; bundler=1.17.3; hash='sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I='; updatecheck=rubygems137-update ;;
               191) version=1.9.1; patchlevel=431; gems=2.6.14; bundler=1.17.3; hash='sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I='; updatecheck=ruby18-rubygems-update ;;
@@ -442,6 +443,16 @@ jobs:
             ${{ runner.temp }}/ruby184-incoming-evidence/consumer/incoming_consumer.gemspec
             ${{ runner.temp }}/ruby184-incoming-evidence/consumer/lib/incoming_consumer.rb
             ${{ runner.temp }}/ruby184-incoming-evidence/consumer.nix
+            ${{ runner.temp }}/ruby185-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby185-incoming-evidence/capture.gemrc
+            ${{ runner.temp }}/ruby185-incoming-evidence/home/.gemrc
+            ${{ runner.temp }}/ruby185-incoming-evidence/logs/*
+            ${{ runner.temp }}/ruby185-incoming-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby185-incoming-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby185-incoming-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby185-incoming-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby185-incoming-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby185-incoming-evidence/consumer.nix
             ${{ runner.temp }}/ruby186-incoming-evidence/receipt.json
             ${{ runner.temp }}/ruby186-incoming-evidence/capture.gemrc
             ${{ runner.temp }}/ruby186-incoming-evidence/home/.gemrc
