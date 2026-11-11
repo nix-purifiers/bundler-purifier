@@ -114,15 +114,16 @@ jobs:
               --results "$RUNNER_TEMP/ruby18-incoming-${epoch}-evidence"
           done
 
-      - name: Ruby 1.9 and 2.0 native incoming composition
+      - name: Ruby 1.9, 2.0 and 2.1 native incoming composition
         if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
         run: |
           update=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-rubygems-update)
-          for point in 19 20; do
+          for point in 19 20 21; do
             case "$point" in
               19) version=1.9.3; patchlevel=547 ;;
               20) version=2.0.0; patchlevel=481 ;;
+              21) version=2.1.3; patchlevel=242 ;;
             esac
             mapfile -t sdk < <(nix build --no-link --print-out-paths \
               ".#checks.x86_64-linux.ruby${point}-cli" \
@@ -164,4 +165,12 @@ jobs:
             ${{ runner.temp }}/ruby20-incoming-evidence/consumer/incoming_consumer.gemspec
             ${{ runner.temp }}/ruby20-incoming-evidence/consumer/lib/incoming_consumer.rb
             ${{ runner.temp }}/ruby20-incoming-evidence/consumer.nix
+            ${{ runner.temp }}/ruby21-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby21-incoming-evidence/logs/*
+            ${{ runner.temp }}/ruby21-incoming-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby21-incoming-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby21-incoming-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby21-incoming-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby21-incoming-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby21-incoming-evidence/consumer.nix
           if-no-files-found: ignore

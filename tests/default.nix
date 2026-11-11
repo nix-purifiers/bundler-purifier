@@ -409,6 +409,22 @@ in
       nativeBuildInputs = [ native20.compiler ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    native21 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubyPackage =
+        (import olderRubySource {
+          system = "x86_64-linux";
+          config = { };
+        }).ruby_2_1;
+      rubyVersion = "2.1.3";
+      runtimeName = "ruby213";
+    };
+    project21 = build {
+      src = ./fixtures/ruby21;
+      ruby = native21.sdk;
+      nativeBuildInputs = [ native21.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project19 = build {
       src = ./fixtures/ruby19;
       ruby = native19.sdk;
@@ -439,6 +455,22 @@ in
     ruby20-cli = cli.override {
       projectRuby = native20.sdk;
       projectNativeBuildInputs = [ native20.compiler ];
+    };
+    ruby21-sdk = native21.sdk;
+    ruby21-native-extension = project21.tests;
+    ruby21-app = project21.packages.app;
+    ruby21-repository = project21.release.projections.rubygems;
+    ruby21-input-composition =
+      pkgs.runCommand "ruby210-bundler117-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native21.sdk} ${project21.release.projections.rubygems} ${project21.release.projections.rubygems.catalog} 2.1.3
+          ${native21.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../tools/rubygems_inputs.rb}
+          touch $out
+        '';
+    ruby21-cli = cli.override {
+      projectRuby = native21.sdk;
+      projectNativeBuildInputs = [ native21.compiler ];
     };
     ruby19-sdk = native19.sdk;
     ruby19-native-extension = project19.tests;
