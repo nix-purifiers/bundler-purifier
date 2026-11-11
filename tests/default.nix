@@ -941,7 +941,7 @@ in
       pkgs.runCommand "ruby185-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
         ''
           export HOME="$TMPDIR"
-          python3 ${../.}/tests/historical-composition.py ${native185.sdk} ${project185.release.projections.rubygems} ${project185.release.projections.rubygems.catalog} 1.8.4 0.9.9 --versionless --rubygems-version 1.3.5 --no-ruby-dsl
+          python3 ${../.}/tests/historical-composition.py ${native185.sdk} ${project185.release.projections.rubygems} ${project185.release.projections.rubygems.catalog} 1.8.5 0.9.9 --versionless --rubygems-version 1.3.5 --no-ruby-dsl
           touch "$out"
         '';
     ruby186-sdk = native186.sdk;
