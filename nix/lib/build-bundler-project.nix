@@ -72,6 +72,8 @@
   integrationTools ? ../../tools,
   # lib.bundler-purifier.readLock (read-lock.nix), which the overlay passes.
   readLock,
+  nix ? null,
+  closureInfo ? null,
 }:
 {
   # The root of the Bundler project, where the Gemfile is.
@@ -707,80 +709,127 @@ let
     "bundle"
   ];
 in
-assert
-  clashes == [ ]
-  || throw "bundler-purifier: a gemspec of the project builds a gem named ${lib.head clashes}, which clashes with packages.${lib.head clashes}.";
-{
-  inherit projections;
-  packages = lib.mapAttrs (name: gem: gem // { projections = projectionFor [ name ]; }) gems // {
-    app = app // {
-      inherit projections;
-    };
-    bundle = bundle // {
-      inherit projections;
-    };
-  };
-
-  tests = app.overrideAttrs (_: {
-    name = "${name}-tests";
-    doCheck = true;
-  });
-
-  release =
-    if lib.length (lib.attrNames gems) == 1 then
-      (lib.head (lib.attrValues gems)) // { projections = releaseProjections; }
-    else if gems != { } then
-      symlinkJoin {
-        name = "${name}-release";
-        paths = lib.attrValues gems;
-        passthru = {
-          projections = releaseProjections;
-        };
-      }
-    else
-      throw "bundler-purifier: the project has no gemspec, so it has no release for `bundler-purifier publish` to push.";
-
-  # Every download of the lock, for every system.
-  fetches = checkedLock.entries;
-
-  # Each executable that a gemspec of the project declares, run with the
-  # app's bundle: `bin/<name>`.
-  executables = lib.listToAttrs (
-    lib.concatMap (
-      gem:
-      map (executable: {
-        name = executable;
-        value = writeShellScriptBin executable ''
-          exec ${bundle}/bin/bundle exec ${lib.escapeShellArg executable} "$@"
-        '';
-      }) gem.executables
-    ) lock.gems
-  );
-
-  # A shell with the Ruby, git, build tools and libraries of the `app`
-  # build, for day-to-day work: native extensions compile in it as they do
-  # in the sandbox, and gems that open a library through FFI find it.
-  devShell = mkShell {
-    packages = [
-      ruby'
+if (import ./native-lock-version.nix lockFile) == 4 then
+  assert
+    without == [ ]
+    || throw "bundler-purifier: pre-lockfile profiles currently require the default context";
+  assert
+    externalPaths == { } || throw "bundler-purifier: pre-lockfile profiles do not accept path sources";
+  assert
+    !(builtins.pathExists gemfileLock)
+    || throw "bundler-purifier: ambiguous Gemfile.lock for pre-lockfile profile";
+  assert
+    ruby != null && nix != null && closureInfo != null
+    || throw "bundler-purifier: pre-lockfile builds require an explicit native SDK and host Nix tools";
+  (import ./build-native-environment-project.nix {
+    inherit
+      lib
+      stdenv
+      runCommand
+      writeText
+      writeShellScriptBin
+      mkShell
+      fetchurl
       gitMinimal
-    ]
-    ++ nativeBuildInputs
-    ++ runtimeInputs;
-    LD_LIBRARY_PATH = runtimeLibraryPath;
-  };
+      ruby_3_4
+      nix
+      purifier
+      closureInfo
+      symlinkJoin
+      integrationTools
+      ;
+  })
+    {
+      inherit
+        src
+        lockFile
+        ruby
+        dependencies
+        name
+        nativeBuildInputs
+        buildInputs
+        fetchers
+        srcFilter
+        ;
+      checkCommand = if checkCommand == "bundle exec rake" then "gem exec rake" else checkCommand;
+      indexRuby = if indexRuby == null then ruby_3_4 else indexRuby;
+      projectionRuby = if projectionRuby == null then ruby_3_4 else projectionRuby;
+    }
+else
+  assert
+    clashes == [ ]
+    || throw "bundler-purifier: a gemspec of the project builds a gem named ${lib.head clashes}, which clashes with packages.${lib.head clashes}.";
+  {
+    inherit projections;
+    packages = lib.mapAttrs (name: gem: gem // { projections = projectionFor [ name ]; }) gems // {
+      app = app // {
+        inherit projections;
+      };
+      bundle = bundle // {
+        inherit projections;
+      };
+    };
 
-  environment = {
-    PATH = lib.makeBinPath (
-      [
+    tests = app.overrideAttrs (_: {
+      name = "${name}-tests";
+      doCheck = true;
+    });
+
+    release =
+      if lib.length (lib.attrNames gems) == 1 then
+        (lib.head (lib.attrValues gems)) // { projections = releaseProjections; }
+      else if gems != { } then
+        symlinkJoin {
+          name = "${name}-release";
+          paths = lib.attrValues gems;
+          passthru = {
+            projections = releaseProjections;
+          };
+        }
+      else
+        throw "bundler-purifier: the project has no gemspec, so it has no release for `bundler-purifier publish` to push.";
+
+    # Every download of the lock, for every system.
+    fetches = checkedLock.entries;
+
+    # Each executable that a gemspec of the project declares, run with the
+    # app's bundle: `bin/<name>`.
+    executables = lib.listToAttrs (
+      lib.concatMap (
+        gem:
+        map (executable: {
+          name = executable;
+          value = writeShellScriptBin executable ''
+            exec ${bundle}/bin/bundle exec ${lib.escapeShellArg executable} "$@"
+          '';
+        }) gem.executables
+      ) lock.gems
+    );
+
+    # A shell with the Ruby, git, build tools and libraries of the `app`
+    # build, for day-to-day work: native extensions compile in it as they do
+    # in the sandbox, and gems that open a library through FFI find it.
+    devShell = mkShell {
+      packages = [
         ruby'
         gitMinimal
       ]
       ++ nativeBuildInputs
-      ++ runtimeInputs
-    );
-    LD_LIBRARY_PATH = runtimeLibraryPath;
-  };
+      ++ runtimeInputs;
+      LD_LIBRARY_PATH = runtimeLibraryPath;
+    };
 
-  inherit gemCache;
-}
+    environment = {
+      PATH = lib.makeBinPath (
+        [
+          ruby'
+          gitMinimal
+        ]
+        ++ nativeBuildInputs
+        ++ runtimeInputs
+      );
+      LD_LIBRARY_PATH = runtimeLibraryPath;
+    };
+
+    inherit gemCache;
+  }

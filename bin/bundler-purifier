@@ -329,6 +329,31 @@ module BundlerPurifier
     @project_inputs = []
     @input_views = []
     return if references.empty?
+    # Input GC roots are owned working directories beside the explicitly
+    # chosen lockfile. Validate before the resolver creates any output links.
+    project_root = File.realpath(root)
+    expanded_state = File.expand_path(state_dir)
+    # An explicit external lock has an explicitly chosen external anchor.
+    # Parents inside the project remain subject to project containment.
+    anchor = if expanded_state.start_with?(project_root + "/")
+      project_root
+    else
+      File.realpath(File.dirname(lockfile_path))
+    end
+    current = anchor
+    relative = if expanded_state.start_with?(project_root + "/")
+      expanded_state.delete_prefix(anchor + "/")
+    else
+      ".bundler-purifier"
+    end
+    (relative.split("/") + ["inputs"]).each do |part|
+      current = File.join(current, part)
+      if File.exist?(current) || File.symlink?(current)
+        fail!("Nix input state is not an owned directory") if File.symlink?(current) || !File.directory?(current)
+      else
+        Dir.mkdir(current, 0700)
+      end
+    end
     request = { "references" => references, "previous" => previous, "refresh" => refresh,
                 "roots" => File.join(state_dir, "inputs") }
     output, status = Open3.capture2("python3", File.join(tools_dir, "resolve_inputs.py"), stdin_data: JSON.dump(request))
@@ -912,6 +937,22 @@ module BundlerPurifier
     end
     @input_references = references unless references.empty?
     command = argv.shift
+    if %w[lock update prefetch shell publish].include?(command)
+      prelock = begin
+        File.file?(lockfile_path) && JSON.parse(File.binread(lockfile_path, 16 * 1024 * 1024 + 1))["version"] == 4
+      rescue JSON::ParserError
+        false
+      end
+      if !prelock && command == "lock"
+        resolve_project_inputs
+        selected = File.dirname(lock_ruby_bindir)
+        prelock = File.file?(File.join(selected, "share/bundler-purifier/sdk-components.json"))
+      end
+      if prelock
+        require File.join(tools_dir, "native_environment_frontend")
+        return PurifierNativeEnvironmentFrontend.new(self).run(command, argv)
+      end
+    end
     case command
     when "lock" then lock(force: argv.delete("--force") ? true : false)
     when "update" then update(argv)
