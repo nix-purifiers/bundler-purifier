@@ -421,7 +421,7 @@ in build {
         publish = [command, 'publish', '--host', host, *proxy_flags]
         run('publish-projected', publish, project, publication)
         assert stored == archives
-        assert publication_agents and all(agent.startswith('RubyGems/' + args.rubygems_version) for agent in publication_agents), publication_agents
+        assert publication_agents and all(agent.removeprefix('Ruby, ').startswith('RubyGems/' + args.rubygems_version + ' ') for agent in publication_agents), publication_agents
         receipt['publicationNativeUserAgents'] = publication_agents
         count = len(uploads)
         run('publish-dedup', publish, project, publication)
@@ -478,4 +478,4 @@ finally:
         capture_server.shutdown()
         capture_server.server_close()
     save()
-print('PASS Ruby1.8 incoming CLI composition, pure build, projected publication and ordinary consumer', flush=True)
+print(f'PASS Ruby{args.ruby_version} incoming CLI composition, pure build, projected publication and ordinary consumer', flush=True)
