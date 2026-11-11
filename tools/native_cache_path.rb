@@ -18,7 +18,8 @@ module PurifierNativeCachePath
   end
 
   def self.install
-    return if @installed || !ENV["BUNDLE_CACHE_PATH"] || !Bundler.respond_to?(:app_cache)
+    return if @installed || !Bundler.respond_to?(:app_cache)
+    return unless ENV["BUNDLE_CACHE_PATH"] || ENV["BUNDLER_PURIFIER_INPUT_DATA"]
     begin
       Dir[Pathname.new("__purifier_cache_path_probe__")]
       return
