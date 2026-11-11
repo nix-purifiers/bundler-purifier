@@ -30,6 +30,16 @@ module PurifierGemInputs
   end
 
   LEGACY_SOURCE_ARRAY = !defined?(Bundler::SourceList)
+  LEGACY_YAML_LOCK = !Bundler::Definition.respond_to?(:build)
+
+  if LEGACY_YAML_LOCK
+    module SingleRepository
+      def remotes
+        [uri]
+      end
+    end
+    install_patch(Bundler::Source::Rubygems, SingleRepository)
+  end
 
   def self.rubygems_sources(sources)
     sources.respond_to?(:rubygems_sources) ? sources.rubygems_sources : sources.select { |source| source.is_a?(Bundler::Source::Rubygems) }
@@ -37,7 +47,8 @@ module PurifierGemInputs
 
   def self.add_rubygems_source(sources, remotes, intrinsic = false)
     return sources.add_rubygems_source("remotes" => remotes) if sources.respond_to?(:add_rubygems_source)
-    candidate = Bundler::Source::Rubygems.new("remotes" => Array(remotes))
+    options = LEGACY_YAML_LOCK ? { "uri" => Array(remotes).first } : { "remotes" => Array(remotes) }
+    candidate = Bundler::Source::Rubygems.new(options)
     candidate.extend(IntrinsicSpecs) if intrinsic
     existing = sources.find { |source| source == candidate }
     existing || (sources << candidate; candidate)
@@ -128,6 +139,35 @@ module PurifierGemInputs
     end
   end
 
+  module YamlRepositorySpecs
+    def fetch(spec)
+      return super if spec.respond_to?(:fetch_platform)
+      # These specifications came from the actual local gem archive, so
+      # their platform is already materialized rather than remotely lazy.
+      Gem::RemoteFetcher.fetcher.download(spec, uri, Gem.dir)
+    end
+
+    def specs
+      @purifier_yaml_specs ||= Bundler::Index.build do |index|
+        remotes.each do |remote|
+          next unless remote.scheme == "file"
+          path = URI.unescape(remote.path)
+          Dir[File.join(path, "gems", "*.gem")].sort.each do |archive|
+            spec = Gem::Format.from_file_by_path(archive).spec
+            next unless PACKAGES.key?(spec.name)
+            installed = Gem::Specification.find_all_by_name(spec.name, "= #{spec.version}").find do |candidate|
+              candidate.platform.to_s == spec.platform.to_s && candidate.loaded_from &&
+                candidate.full_gem_path.start_with?(Gem.dir + "/") && File.file?(candidate.loaded_from)
+            end
+            spec = installed if installed
+            spec.source = self
+            index << spec
+          end
+        end
+      end
+    end
+  end
+
   module Dsl
     def to_definition(*arguments)
       intrinsics = PACKAGES.values.select { |package| package["intrinsic"] }
@@ -146,9 +186,9 @@ module PurifierGemInputs
         if source.respond_to?(:local!)
           source.local!
         else
-          source.extend(LegacyRepositorySpecs)
+          source.extend(LEGACY_YAML_LOCK ? YamlRepositorySpecs : LegacyRepositorySpecs)
         end
-        source.cached! unless ENV["BUNDLER_PURIFIER_RUNTIME"] == "1"
+        source.cached! if source.respond_to?(:cached!) && ENV["BUNDLER_PURIFIER_RUNTIME"] != "1"
       end
       lockfile, unlock = arguments
       if unlock != true && lockfile && File.file?(lockfile)
@@ -169,8 +209,9 @@ module PurifierGemInputs
       unless defined?(Bundler::SourceMap)
         PurifierGemInputs.rubygems_sources(definition.send(:sources)).each do |source|
           next unless source.remotes.any? { |remote| remote.scheme == "file" }
-          source.extend(LegacyRepositorySpecs)
-          source.cached! unless ENV["BUNDLER_PURIFIER_RUNTIME"] == "1"
+          next if LEGACY_YAML_LOCK && !source.purifier_nix_repository?
+          source.extend(LEGACY_YAML_LOCK ? YamlRepositorySpecs : LegacyRepositorySpecs)
+          source.cached! if source.respond_to?(:cached!) && ENV["BUNDLER_PURIFIER_RUNTIME"] != "1"
         end
       end
       if intrinsics.any?
@@ -190,7 +231,17 @@ module PurifierGemInputs
         end
         if PurifierGemInputs::LEGACY_SOURCE_ARRAY
           repository_source = PurifierGemInputs.add_rubygems_source(@sources, package.fetch("repository"))
-          return source(repository_source) { super(name, *(arguments + [options])) }
+          result = source(repository_source) { super(name, *(arguments + [options])) }
+          if PurifierGemInputs::LEGACY_YAML_LOCK
+            seen = false
+            @sources.delete_if do |candidate|
+              next false unless candidate.equal?(repository_source)
+              duplicate = seen
+              seen = true
+              duplicate
+            end
+          end
+          return result
         end
         options[:source] = package.fetch("repository")
         arguments << options
@@ -246,7 +297,8 @@ PurifierGemInputs.install_patch(Bundler::Dsl, PurifierGemInputs::Dsl)
 unless Bundler::Dsl.method_defined?(:eval_gemfile)
   module PurifierGemInputs::LegacyGemfileEvaluation
     def eval_gemfile(path)
-      instance_eval(Bundler.read_file(path.to_s), path.to_s, 1)
+      text = Bundler.respond_to?(:read_file) ? Bundler.read_file(path.to_s) : File.read(path.to_s)
+      instance_eval(text, path.to_s, 1)
     end
   end
   PurifierGemInputs.install_patch(Bundler::Dsl, PurifierGemInputs::LegacyGemfileEvaluation)
@@ -306,11 +358,13 @@ module PurifierGemInputs::Platforms
     end
   end
 end
-require "bundler/match_platform" unless defined?(Bundler::MatchPlatform)
-PurifierGemInputs.install_patch(Bundler::MatchPlatform, PurifierGemInputs::Platforms)
+unless PurifierGemInputs::LEGACY_YAML_LOCK
+  require "bundler/match_platform" unless defined?(Bundler::MatchPlatform)
+  PurifierGemInputs.install_patch(Bundler::MatchPlatform, PurifierGemInputs::Platforms)
+end
 
 require "bundler/resolver"
-require "bundler/resolver/spec_group" unless defined?(Bundler::Resolver::SpecGroup)
+require "bundler/resolver/spec_group" unless defined?(Bundler::Resolver::SpecGroup) || PurifierGemInputs::LEGACY_YAML_LOCK
 module PurifierGemInputs::ResolverDependencies
   def dependencies
     super.map do |dependency|
@@ -318,7 +372,7 @@ module PurifierGemInputs::ResolverDependencies
     end
   end
 end
-PurifierGemInputs.install_patch(Bundler::Resolver::SpecGroup, PurifierGemInputs::ResolverDependencies)
+PurifierGemInputs.install_patch(Bundler::Resolver::SpecGroup, PurifierGemInputs::ResolverDependencies) if defined?(Bundler::Resolver::SpecGroup)
 
 # The earliest Definition builds source requirements inside resolve instead
 # of exposing a source_requirements method. Keep its sources scoped to this
@@ -340,29 +394,83 @@ if PurifierGemInputs::LEGACY_SOURCE_ARRAY
       super
     end
   end
-  PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::LegacySourceConvergence)
-  Bundler::Definition.send(:private, :converge_sources)
+  unless PurifierGemInputs::LEGACY_YAML_LOCK
+    PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::LegacySourceConvergence)
+    Bundler::Definition.send(:private, :converge_sources)
+  end
   module PurifierGemInputs::InlineDefinitionSources
-    def resolve
+    def resolve(*arguments)
       previous = Thread.current[:purifier_definition_sources]
       Thread.current[:purifier_definition_sources] = sources
-      super
+      super(*arguments)
     ensure
       Thread.current[:purifier_definition_sources] = previous
     end
   end
   module PurifierGemInputs::InlineResolverSources
-    def resolve(requirements, index, source_requirements = {}, base = [])
+    def resolve(*arguments)
       sources = Thread.current[:purifier_definition_sources]
       if sources
-        source_requirements = source_requirements.dup
+        source_requirements = (arguments[2] || {}).dup
         PurifierGemInputs.source_requirements(PurifierGemInputs::PACKAGES, sources).each do |name, source|
           source_requirements[name] = source.specs
         end
+        arguments[2] = source_requirements
       end
-      super(requirements, index, source_requirements, base)
+      super(*arguments)
     end
   end
-  PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::InlineDefinitionSources)
+  target = PurifierGemInputs::LEGACY_YAML_LOCK ? Bundler::Environment : Bundler::Definition
+  PurifierGemInputs.install_patch(target, PurifierGemInputs::InlineDefinitionSources)
+  target.send(:private, :resolve) if PurifierGemInputs::LEGACY_YAML_LOCK
   PurifierGemInputs.install_patch(class << Bundler::Resolver; self; end, PurifierGemInputs::InlineResolverSources)
+end
+
+if PurifierGemInputs::LEGACY_YAML_LOCK
+  def PurifierGemInputs.yaml_sources(values)
+    values.each do |source|
+      if source.is_a?(Bundler::Source::Rubygems) && source.purifier_nix_repository?
+        source.extend(PurifierGemInputs::YamlRepositorySpecs)
+      end
+    end
+    values
+  end
+  module PurifierGemInputs::YamlDefinitionSources
+    def sources
+      PurifierGemInputs.yaml_sources(super)
+    end
+  end
+  module PurifierGemInputs::YamlLockedSources
+    def sources
+      PurifierGemInputs.yaml_sources(super)
+    end
+  end
+  PurifierGemInputs.install_patch(Bundler::Definition, PurifierGemInputs::YamlDefinitionSources)
+  PurifierGemInputs.install_patch(Bundler::Definition::Locked, PurifierGemInputs::YamlLockedSources)
+  # The old installer eagerly fetches every ordinary repository before
+  # resolving, even when each requirement has an explicit Nix source.
+  # Retain its original index and ordering, loading it only when its native
+  # resolver actually asks for a package outside those explicit sources.
+  class PurifierGemInputs::DeferredIndex
+    def initialize(&loader)
+      @loader = loader
+    end
+
+    def search(dependency)
+      (@index ||= @loader.call).search(dependency)
+    end
+
+    def sources
+      (@index ||= @loader.call).sources
+    end
+  end
+
+  module PurifierGemInputs::DeferredOrdinaryIndex
+    def remote_index
+      @purifier_deferred_index ||= PurifierGemInputs::DeferredIndex.new { super }
+    end
+  end
+  require "bundler/installer"
+  PurifierGemInputs.install_patch(Bundler::Installer, PurifierGemInputs::DeferredOrdinaryIndex)
+  Bundler::Installer.send(:private, :remote_index)
 end

@@ -170,7 +170,7 @@ module BundlerPurifier
     files = ["Gemfile", "Gemfile.lock"] + Dir.glob("**/*.gemspec", base: root).reject { |f| f.start_with?("vendor/") }
     lockfile = gemfile_lock_path
     if File.file?(lockfile)
-      external_paths(Bundler::LockfileParser.new(File.read(lockfile))).each do |p|
+      external_paths(lock_parser(File.read(lockfile))).each do |p|
         files += Dir.glob("*.gemspec", base: File.expand_path(p, root)).map { |g| File.join(p, g) }
       end
     end
@@ -348,16 +348,27 @@ module BundlerPurifier
   # The selected consumer SDK reports its own identity and command ABI.
   # The host Ruby running this CLI must never stand in for that SDK.
   def native_bundler_capabilities(env = {})
-    code = 'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; require "bundler/cli"; puts [Bundler::VERSION, Bundler::CLI.instance_methods.map { |name| name.to_s }.include?("lock") && (defined?(Bundler::SourceList) || !defined?(Bundler::Definition)) ? "lock" : "install"].join("|")'
+    code = 'require "rubygems"; require "rubygems/user_interaction" unless defined?(Gem::SilentUI); gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; require "bundler/cli"; require "bundler/definition"; puts [Bundler::VERSION, Bundler::CLI.instance_methods.map { |name| name.to_s }.include?("lock") && (defined?(Bundler::SourceList) || !Bundler::Definition.respond_to?(:build)) ? "lock" : "install", Bundler::Definition.respond_to?(:build) ? "text" : "yaml"].join("|")'
     out, status = Open3.capture2(env, File.join(lock_ruby_bindir, "ruby"), "-e", code)
     fail!("could not inspect the selected native Bundler SDK") unless status.success?
-    version, command = out.strip.split("|")
+    version, command, format = out.strip.split("|")
     fail!("selected native Bundler returned an invalid identity") unless version && Gem::Version.correct?(version) && %w[lock install].include?(command)
-    { "version" => version, "lockCommand" => command }
+    { "version" => version, "lockCommand" => command, "format" => format }
+  end
+
+  def lock_parser(text, lock = nil)
+    return Bundler::LockfileParser.new(text) unless text.lstrip.start_with?("---")
+    require File.join(tools_dir, "native_lock")
+    lock ||= File.file?(lockfile_path) ? JSON.parse(File.read(lockfile_path)) : {}
+    PurifierNativeLock.parser(text, @native_lock_snapshot || lock["bundlerNativeLock"],
+      bundler_version: lock["bundlerVersion"], ruby_version: lock["ruby"])
+  rescue StandardError => error
+    raise unless defined?(PurifierNativeLock::Invalid) && error.is_a?(PurifierNativeLock::Invalid)
+    fail!(error.message)
   end
 
   def locked_bundler_version(lock)
-    marker = Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version&.to_s
+    marker = lock_parser(File.read(gemfile_lock_path), lock).bundler_version&.to_s
     recorded = lock["bundlerVersion"]
     if recorded && (!recorded.is_a?(String) || !Gem::Version.correct?(recorded))
       fail!("#{lock_name} has an invalid bundlerVersion; recapture with the intended native SDK using bundler-purifier lock --force")
@@ -405,17 +416,27 @@ module BundlerPurifier
     Dir.mktmpdir("bundler-purifier-lock") do |state|
       env = lock_env(state)
       write_lock_run_config(env["BUNDLE_APP_CONFIG"])
-      existing_marker = File.file?(gemfile_lock_path) && Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version&.to_s
+      existing_marker = File.file?(gemfile_lock_path) && !File.read(gemfile_lock_path).lstrip.start_with?("---") && Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version&.to_s
       native_sdk = existing_marker ? { "version" => existing_marker, "lockCommand" => "lock" } : native_bundler_capabilities(env).merge("observed" => true)
       env["BUNDLER_PURIFIER_BUNDLER_VERSION"] = native_sdk.fetch("version") if native_sdk["observed"]
 
       if !File.file?(gemfile_lock_path) || !@input_views.empty?
         puts "bundler-purifier: no Gemfile.lock; resolving with bundle lock"
-        native_bundle!(env, native_sdk.fetch("lockCommand"), persist_lock: true)
+        if native_sdk["format"] == "yaml"
+          native_bundle!(env, "install", persist_lock: true)
+          native_bundle!(env, "lock", persist_lock: true)
+        else
+          native_bundle!(env, native_sdk.fetch("lockCommand"), persist_lock: true)
+        end
       end
 
-      locked_bundler = Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version
-      if native_sdk.fetch("lockCommand") == "install"
+      yaml_lock = File.read(gemfile_lock_path).lstrip.start_with?("---")
+      if yaml_lock
+        native_bundle!(env, "install", persist_lock: true)
+        native_bundle!(env, "lock", persist_lock: true)
+      end
+      locked_bundler = yaml_lock ? nil : Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version
+      if yaml_lock || native_sdk.fetch("lockCommand") == "install"
         native_bundle!(env, "cache", persist_lock: true)
       else
         cache_command = locked_bundler && locked_bundler < Gem::Version.new("2.0") ? "package" : "cache"
@@ -423,7 +444,11 @@ module BundlerPurifier
       end
       cache = File.expand_path(env["BUNDLE_CACHE_PATH"], root)
       text = File.read(gemfile_lock_path)
-      parser = Bundler::LockfileParser.new(text)
+      if yaml_lock
+        @native_lock_snapshot = JSON.parse(capture!(env, File.join(lock_ruby_bindir, "ruby"),
+          File.join(tools_dir, "native_lock_snapshot.rb")))
+      end
+      parser = lock_parser(text)
       checksums = gemfile_lock_checksums(text)
       check_platforms(parser)
       absolute = external_paths(parser).select { |p| p.start_with?("/") }
@@ -491,6 +516,7 @@ module BundlerPurifier
         "bundlerHash" => lock_bundler(bundler, env, state),
       }
       lockfile["bundlerVersion"] = bundler unless marker
+      lockfile["bundlerNativeLock"] = @native_lock_snapshot if yaml_lock
       { "gemHashes" => gem_hashes, "gemSources" => gem_sources, "mirrors" => mirrors,
         "gitHashes" => git_hashes, "executables" => executables }.each do |key, value|
         lockfile[key] = value.sort.to_h unless value.empty?
@@ -601,7 +627,7 @@ module BundlerPurifier
   def check_complete!(lock)
     resolve_project_inputs unless lock.fetch("projectInputs", []).empty?
     text = File.read(gemfile_lock_path)
-    parser = Bundler::LockfileParser.new(text)
+    parser = lock_parser(text, lock)
     checksums = gemfile_lock_checksums(text)
     absent = []
     parser.specs.each do |spec|
@@ -659,7 +685,7 @@ module BundlerPurifier
   def prefetch(args)
     lock = read_lock!
     bundler_version = locked_bundler_version(lock)
-    unless Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version
+    unless lock_parser(File.read(gemfile_lock_path), lock).bundler_version
       actual = native_bundler_capabilities.fetch("version")
       fail!("selected native Bundler SDK #{actual} conflicts with recorded bundlerVersion #{bundler_version}; use the intended native SDK") unless actual == bundler_version
     end
@@ -679,29 +705,43 @@ module BundlerPurifier
                    "BUNDLER_PURIFIER_BUNDLER_VERSION" => bundler_version }
     config_command = Gem::Version.new(bundler_version) >= Gem::Version.new("2.1") ? %w[config set --local] : %w[config --local]
 
+    yaml_sdk = lock.dig("bundlerNativeLock", "format") == "bundler-yaml"
     cache = File.join(state_dir, "cache")
     FileUtils.rm_rf(cache)
     FileUtils.mkdir_p(cache)
     Dir.children(built).each do |entry|
       source = File.join(built, entry)
       dest = File.join(cache, entry)
-      if File.symlink?(source)
+      if yaml_sdk && File.file?(source)
+        FileUtils.copy_file(source, dest)
+        FileUtils.chmod("u+w", dest)
+      elsif File.symlink?(source)
         File.symlink(File.readlink(source), dest)
       else
         FileUtils.cp_r(source, dest)
         FileUtils.chmod_R("u+w", dest)
       end
     end
-    run!({}, "nix", "develop", shell, "--command", "bundle", *config_command, "cache_path", Pathname.new(cache).relative_path_from(Pathname.new(root)).to_s, chdir: root)
+    if yaml_sdk
+      require "bundler/yaml_serializer"
+      config_path = File.join(root, ".bundle", "config")
+      config = File.file?(config_path) ? Bundler::YAMLSerializer.load(File.read(config_path)) : {}
+      config["BUNDLE_CACHE_PATH"] = Pathname.new(cache).relative_path_from(Pathname.new(root)).to_s
+      config["BUNDLE_PATH"] ||= "vendor/bundle" unless config["BUNDLE_PATH__SYSTEM"]
+      FileUtils.mkdir_p(File.dirname(config_path))
+      File.write(config_path, Bundler::YAMLSerializer.dump(config))
+    else
+      run!({}, "nix", "develop", shell, "--command", "bundle", *config_command, "cache_path", Pathname.new(cache).relative_path_from(Pathname.new(root)).to_s, chdir: root)
+    end
     # A fresh project gets its own gems, rather than sharing the Ruby's
     # system or user gem directory. Explicit Bundler paths (including
     # path.system) remain the user's choice.
     settings = Bundler::Settings.new(File.join(root, ".bundle"))
-    unless settings[:path] || settings["path.system"]
+    unless yaml_sdk || settings[:path] || settings["path.system"]
       run!({}, "nix", "develop", shell, "--command", "bundle", *config_command, "path", "vendor/bundle", chdir: root)
     end
     with_gemfile_lock_in_tree do
-      if (@input_views || []).empty?
+      if !yaml_sdk && (@input_views || []).empty?
         run!(locked_env, "nix", "develop", shell, "--command", "bundle", "install", "--local", *args, chdir: root)
       else
         env = locked_env.merge("BUNDLER_PURIFIER_INPUT_VIEWS" => JSON.dump(@input_views))
