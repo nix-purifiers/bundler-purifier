@@ -52,7 +52,7 @@ old.stdenv.mkDerivation ({
     gemPath = "lib/ruby/gems/${abi}";
   };
 } // pkgs.lib.optionalAttrs (rubyVersion == "1.8.6") {
-  # This native stack-copying runtime crashes in Timeout with optimized
-  # frame omission. Keep its original source and validate real switching.
+  # This native stack-copying runtime crashes in Timeout with the default
+  # compiler settings. Keep its original source and validate real switching.
   NIX_CFLAGS_COMPILE = "-O0 -fno-omit-frame-pointer -fno-strict-aliasing";
 })
