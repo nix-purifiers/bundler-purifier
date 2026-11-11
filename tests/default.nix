@@ -428,6 +428,14 @@ in
     ruby20-native-extension = project20.tests;
     ruby20-app = project20.packages.app;
     ruby20-repository = project20.release.projections.rubygems;
+    ruby20-input-composition =
+      pkgs.runCommand "ruby200-bundler117-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native20.sdk} ${project20.release.projections.rubygems} ${project20.release.projections.rubygems.catalog} 2.0.0
+          ${native20.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../tools/rubygems_inputs.rb}
+          touch $out
+        '';
     ruby20-cli = cli.override {
       projectRuby = native20.sdk;
       projectNativeBuildInputs = [ native20.compiler ];
