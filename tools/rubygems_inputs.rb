@@ -172,6 +172,15 @@ module PurifierGemInputs
       package = PACKAGES[name]
       package ? Gem::Requirement.new("= #{package.fetch('version')}") : super
     end
+
+    # Early native dependency matching reads this accessor directly,
+    # including when Bundler aliases its newer requirement reader.
+    if Gem::Dependency.method_defined?(:version_requirements)
+      def version_requirements
+        package = PACKAGES[name]
+        package ? Gem::Requirement.new("= #{package.fetch('version')}") : super
+      end
+    end
   end
 
   module ProjectDependencies
