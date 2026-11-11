@@ -8,11 +8,11 @@ if ENV["PURIFIER_FIXTURE_DNS_PORT"] && Gem::RemoteFetcher.method_defined?(:api_e
   require "resolv"
   dns = Resolv::DNS.new(:nameserver => ["127.0.0.1"], :nameserver_port => [["127.0.0.1", Integer(ENV.fetch("PURIFIER_FIXTURE_DNS_PORT"))]],
                         :search => [], :ndots => 1)
-  # Ruby 1.9.1 predates nameserver_port configuration, but its genuine
+  # Older Resolv predates nameserver_port configuration, but its genuine
   # connected UDP requester already accepts an explicit port. Select that
   # transport only on this owned resolver instance; retain native DNS wire
   # parsing, NXDOMAIN handling and RubyGems' endpoint fallback.
-  if RUBY_VERSION == "1.9.1"
+  unless Resolv::DNS::Config.method_defined?(:nameserver_port)
     dns.instance_variable_set(:@purifier_fixture_port, Integer(ENV.fetch("PURIFIER_FIXTURE_DNS_PORT")))
     def dns.make_requester
       Resolv::DNS::Requester::ConnectedUDP.new("127.0.0.1", @purifier_fixture_port)
