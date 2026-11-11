@@ -29,6 +29,8 @@ env.update(HOME=str(home), BUNDLER_PURIFIER_PROJECT_RUBY=str(a.sdk),
     BUNDLER_PURIFIER_SHARED_FLAKE='path:' + str(a.core),
     BUNDLER_PURIFIER_NIXPKGS='builtins.storePath ' + json.dumps(str(a.nixpkgs)))
 receipt = dict(complete=False, commands=[], scope='Local Ruby183/Gem101/Bundler artifact031 project, separately attested Gem135 publisher, ordinary Gem101 consumer.')
+receipt['sourceFiles'] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(list((root / 'tools').glob('*.rb')) + list((root / 'nix/lib').glob('*.nix')) + [root / 'bin/bundler-purifier', Path(__file__).resolve()])}
+receipt['coreRevision'] = subprocess.check_output(['git', '-C', str(a.core), 'rev-parse', 'HEAD'], text=True).strip()
 
 
 def run(label, argv, cwd, environment=None, success=True, reason=None):
