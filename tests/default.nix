@@ -425,6 +425,10 @@ in
       nativeBuildInputs = [ native21.compiler ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    rubygems312Update = pkgs.fetchurl {
+      url = "https://rubygems.org/downloads/rubygems-update-3.1.2.gem";
+      hash = "sha256-e/5OXidBkeVtqNEnx53xDZEg/rhlDkutKSOPSydzpmE=";
+    };
     historicalRubies = import historicalRubySource {
       system = "x86_64-linux";
       config = { };
@@ -493,6 +497,7 @@ in
       projectRuby = native21.sdk;
       projectNativeBuildInputs = [ native21.compiler ];
     };
+    rubygems312-update = rubygems312Update;
     ruby26-sdk = historicalRubies.ruby_2_6;
     ruby26-native-extension = project26.tests;
     ruby26-app = project26.packages.app;

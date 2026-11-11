@@ -135,6 +135,27 @@ jobs:
               --results "$RUNNER_TEMP/ruby${point}-incoming-evidence"
           done
 
+      - name: Stock Ruby 2.6 and 2.7 native incoming composition
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        shell: bash
+        run: |
+          update=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.rubygems312-update)
+          for point in 26 27; do
+            case "$point" in
+              26) version=2.6.6; patchlevel=146; bundler=1.17.2; hash='sha256-uVQDjiLiMsyU/rMjGH5CGUtO1uFqFxKzflvWAY7BdjU=' ;;
+              27) version=2.7.1; patchlevel=83; bundler=2.1.4; hash='sha256-UAFNIdZxIHnaTWRk3hK7k8J4+HySANC2C6mfMsJa9Ik=' ;;
+            esac
+            mapfile -t sdk < <(nix build --no-link --print-out-paths \
+              ".#checks.x86_64-linux.ruby${point}-cli" \
+              ".#checks.x86_64-linux.ruby${point}-sdk")
+            python3 tests/ruby18-incoming-native.py "${sdk[0]}" "${sdk[1]}" \
+              --ruby-version "$version" --ruby-patchlevel "$patchlevel" \
+              --rubygems-version 3.1.2 --bundler-version "$bundler" --bundler-hash "$hash" \
+              --sdk-check "ruby${point}-sdk" --provider-check "ruby${point}-app" \
+              --rubygems-update-archive "$update" \
+              --results "$RUNNER_TEMP/ruby${point}-incoming-evidence"
+          done
+
       - name: Ruby 4.0 and Bundler 4 native incoming composition
         if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
@@ -194,4 +215,20 @@ jobs:
             ${{ runner.temp }}/ruby40-incoming-evidence/consumer/incoming_consumer.gemspec
             ${{ runner.temp }}/ruby40-incoming-evidence/consumer/lib/incoming_consumer.rb
             ${{ runner.temp }}/ruby40-incoming-evidence/consumer.nix
+            ${{ runner.temp }}/ruby26-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby26-incoming-evidence/logs/*
+            ${{ runner.temp }}/ruby26-incoming-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby26-incoming-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby26-incoming-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby26-incoming-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby26-incoming-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby26-incoming-evidence/consumer.nix
+            ${{ runner.temp }}/ruby27-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby27-incoming-evidence/logs/*
+            ${{ runner.temp }}/ruby27-incoming-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby27-incoming-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby27-incoming-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby27-incoming-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby27-incoming-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby27-incoming-evidence/consumer.nix
           if-no-files-found: ignore
