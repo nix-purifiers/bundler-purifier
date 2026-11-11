@@ -15,6 +15,10 @@ import subprocess
 import tempfile
 import threading
 import time
+import sys
+# Helper imports must not mutate the committed source used by this proof.
+sys.dont_write_bytecode = True
+from rubygems_dns_fixture import RegistryDNS
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -409,6 +413,9 @@ in build {
     server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Registry)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     host = f'http://127.0.0.1:{server.server_port}'
+    dns_fixture = RegistryDNS()
+    receipt['fixtureDnsRequests'] = dns_fixture.requests
+    receipt['fixtureDnsHelperSha256'] = hashlib.sha256((ROOT / 'tests/rubygems_fixture_dns.rb').read_bytes()).hexdigest()
     try:
         # RubyGems 2.6 predates GEM_HOST_API_KEY. Give the native client its
         # own private fixture credentials file, never the user's home.
@@ -420,6 +427,8 @@ in build {
             (home / '.gemrc').write_text('---\n:sources:\n- ' + host + '\n')
         local_registry_env = {key: value for key, value in env.items()
                               if key.lower() not in ('http_proxy', 'https_proxy', 'all_proxy')}
+        local_registry_env.update(PURIFIER_FIXTURE_DNS_PORT=str(dns_fixture.port),
+                                  RUBYOPT='-r' + str(ROOT / 'tests/rubygems_fixture_dns.rb'))
         publication = dict(local_registry_env, GEM_HOST_API_KEY='fixture-key')
         proxy_flags = ['--no-http-proxy'] if registry_sdk_archives else []
         publish = [command, 'publish', '--host', host, *proxy_flags]
@@ -470,6 +479,7 @@ puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
     finally:
         server.shutdown()
         server.server_close()
+        dns_fixture.close()
     assert (project / 'Gemfile').read_text() == manifest
     assert (project / 'incoming_consumer.gemspec').read_text() == gemspec
     assert (project / 'Gemfile.lock').read_bytes() == native_lock
