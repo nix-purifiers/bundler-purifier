@@ -9,6 +9,7 @@ import json
 import io
 import tarfile
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -49,7 +50,7 @@ home.mkdir()
 temporary = work / 'tmp'
 temporary.mkdir()
 env = {key: value for key, value in os.environ.items() if not key.startswith(('BUNDLE_', 'GEM_', 'RUBY'))}
-env.update(HOME=str(home), TMPDIR=str(temporary), LC_ALL='C', PATH=f'{args.sdk}/bin:{args.cli}/bin:' + os.environ['PATH'],
+env.update(HOME=str(home), TMPDIR=str(temporary), XDG_CACHE_HOME=str(work / 'cache'), LC_ALL='C', PATH=f'{args.sdk}/bin:{args.cli}/bin:' + os.environ['PATH'],
            BUNDLE_USER_HOME=str(work / 'bundle-home'))
 if args.versionless:
     env['BUNDLER_PURIFIER_BUNDLER_VERSION'] = args.bundler_version
@@ -190,7 +191,7 @@ end
         assert b'BUNDLED WITH' not in native_lock
         assert captured['bundlerVersion'] == args.bundler_version
     else:
-        assert ('BUNDLED WITH\n   ' + args.bundler_version).encode() in native_lock
+        assert re.search(rb'(?m)^BUNDLED WITH\n[ \t]+' + re.escape(args.bundler_version.encode()) + rb'\n', native_lock)
         assert 'bundlerVersion' not in captured
     assert captured['bundlerHash'] == args.bundler_hash
     assert len(captured['projectInputs']) == 1 and not captured.get('gemHashes')

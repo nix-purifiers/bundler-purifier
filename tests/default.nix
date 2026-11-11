@@ -425,6 +425,11 @@ in
       nativeBuildInputs = [ native21.compiler ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    project40 = build {
+      src = ./fixtures/ruby40;
+      ruby = pkgs.ruby_4_0;
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project19 = build {
       src = ./fixtures/ruby19;
       ruby = native19.sdk;
@@ -472,6 +477,18 @@ in
       projectRuby = native21.sdk;
       projectNativeBuildInputs = [ native21.compiler ];
     };
+    ruby40-sdk = pkgs.ruby_4_0;
+    ruby40-native-extension = project40.tests;
+    ruby40-app = project40.packages.app;
+    ruby40-repository = project40.release.projections.rubygems;
+    ruby40-input-composition =
+      pkgs.runCommand "ruby409-bundler4-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${pkgs.ruby_4_0} ${project40.release.projections.rubygems} ${project40.release.projections.rubygems.catalog} 4.0.9 4.0.20
+          touch $out
+        '';
+    ruby40-cli = cli.override { projectRuby = pkgs.ruby_4_0; };
     ruby19-sdk = native19.sdk;
     ruby19-native-extension = project19.tests;
     ruby19-app = project19.packages.app;

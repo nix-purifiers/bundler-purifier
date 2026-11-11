@@ -168,7 +168,12 @@ module PurifierGemInputs
     def dependencies
       values = super
       return values if name.nil? || name.include?("\0") || values.none? { |dependency| PACKAGES.key?(dependency.name) } || full_gem_path.start_with?(RbConfig::CONFIG.fetch("prefix") + "/")
-      values.map { |dependency| PACKAGES.key?(dependency.name) ? dependency.dup.extend(Requirements) : dependency }
+      mapped = values.map do |dependency|
+        PACKAGES.key?(dependency.name) && !dependency.is_a?(Requirements) ? dependency.dup.extend(Requirements) : dependency
+      end
+      # RubyGems appends declarations through this native collection. A
+      # detached array would discard later add_dependency calls.
+      values.frozen? ? mapped.freeze : values.replace(mapped)
     end
   end
 
@@ -194,14 +199,33 @@ module PurifierGemInputs
     end
   end
 
+  def self.repository_path(remote)
+    if remote.respond_to?(:parser) && remote.parser.respond_to?(:unescape)
+      remote.parser.unescape(remote.path)
+    elsif defined?(URI::DEFAULT_PARSER)
+      URI::DEFAULT_PARSER.unescape(remote.path)
+    else
+      URI.unescape(remote.path)
+    end
+  end
+
+  def self.repository_source?(source)
+    source.remotes.any? do |remote|
+      remote.scheme == "file" && PACKAGES.values.any? do |package|
+        !package["intrinsic"] && remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "")
+      end
+    end
+  end
+
   # Bundler 1.x has no local! or local file-source index. Feed the same
   # native archive specifications through its cached source interface.
   module LegacyRepositorySpecs
     def cached_specs
+      return super unless PurifierGemInputs.repository_source?(self)
       @purifier_legacy_cached_specs ||= super.tap do |index|
         remotes.each do |remote|
           next unless remote.scheme == "file"
-          path = defined?(URI::DEFAULT_PARSER) ? URI::DEFAULT_PARSER.unescape(remote.path) : URI.unescape(remote.path)
+          path = PurifierGemInputs.repository_path(remote)
           directory = File.join(path, "gems")
           cache_paths = respond_to?(:caches) ? caches : instance_variable_get(:@caches)
           cache_paths << Pathname.new(directory) unless cache_paths.include?(Pathname.new(directory))
@@ -212,6 +236,28 @@ module PurifierGemInputs
             index << spec
           end
         end
+      end
+    end
+  end
+
+  # Modern local! sources may index installed gems only. A declared Nix
+  # repository also supplies uninstalled archives, through the SDK's Index
+  # and cache lookup rather than through an ordinary network source.
+  module LocalRepositorySpecs
+    include LegacyRepositorySpecs
+
+    def specs
+      return super unless PurifierGemInputs.repository_source?(self)
+      super.tap do |index|
+        cached_specs.each { |spec| index << spec }
+      end
+    end
+  end
+
+  module LocalRepositoryChecksums
+    def checksum_store
+      super.tap do |store|
+        PurifierGemInputs.register_repository_checksums(self, store) if PurifierGemInputs.repository_source?(self)
       end
     end
   end
@@ -248,6 +294,24 @@ module PurifierGemInputs
             spec.source = self
             index << spec
           end
+        end
+      end
+    end
+  end
+
+  # Native Bundler checksum locks need the checksums of the actual local
+  # archives before frozen resolution, just as an ordinary source supplies.
+  def self.register_repository_checksums(source, store)
+    return unless defined?(Bundler::Checksum) && Bundler::Checksum.respond_to?(:from_gem) && source.respond_to?(:checksum_store)
+    return if Bundler.settings[:disable_checksum_validation]
+    source.remotes.each do |remote|
+      next unless remote.scheme == "file"
+      path = repository_path(remote)
+      Dir[File.join(path, "gems", "*.gem")].sort.each do |archive|
+        spec = Bundler.rubygems.spec_from_gem(archive)
+        next unless PACKAGES.key?(spec.name)
+        File.open(archive, "rb") do |input|
+          store.register(spec, Bundler::Checksum.from_gem(input, archive))
         end
       end
     end
@@ -374,6 +438,12 @@ if PurifierGemInputs::LEGACY_SOURCE_ARRAY
     end
   end
   PurifierGemInputs.install_patch(Bundler::Source::Rubygems, PurifierGemInputs::RepositoryIdentity)
+end
+if Bundler::Source::Rubygems.method_defined?(:local!)
+  PurifierGemInputs.install_patch(Bundler::Source::Rubygems, PurifierGemInputs::LocalRepositorySpecs)
+  if Bundler::Source::Rubygems.method_defined?(:checksum_store) && defined?(Bundler::Checksum) && Bundler::Checksum.respond_to?(:from_gem)
+    PurifierGemInputs.install_patch(Bundler::Source::Rubygems, PurifierGemInputs::LocalRepositoryChecksums)
+  end
 end
 PurifierGemInputs.install_patch(Bundler::Dependency, PurifierGemInputs::Requirements)
 PurifierGemInputs.install_patch(Gem::Specification, PurifierGemInputs::ProjectDependencies)
