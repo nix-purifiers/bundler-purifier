@@ -621,7 +621,6 @@ if PurifierGemInputs::LEGACY_SOURCE_ARRAY
       ensure
         Thread.current[:purifier_definition_sources] = previous
       end
-      private :specs
     end
     require "bundler/installer"
     require "bundler/runtime"
