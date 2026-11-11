@@ -584,6 +584,30 @@ in
       nativeBuildInputs = [ native186.compiler ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    runtime190 = import ./early-ruby-runtime.nix {
+      inherit pkgs olderRubySource;
+      rubyVersion = "1.9.0";
+      patchlevel = 0;
+      sourceVersion = "1.9.0-5";
+      sourceHash = "sha256-oi2rQ+85KuVzKYIxUvI40rZM6gn/PsoIcjDYyU6b+Oo=";
+      legacySSL = true;
+    };
+    native190 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubyPackage = runtime190;
+      rubyVersion = "1.9.0";
+      runtimeName = "ruby190-native";
+      rubygemsVersion = "1.3.7";
+      rubygemsHash = "sha256-r319QIUFHxE6H7qCLJumQc9S6eup+0MRzbzWvm3Q6Aw=";
+      jsonVersion = "1.1.9";
+      jsonHash = "sha256-mrmjXTlb3NSZQ/3ZE3Z/xioBPaKb8y700MSStkO8kqU=";
+    };
+    project190 = build {
+      src = ./fixtures/ruby190;
+      ruby = native190.sdk;
+      nativeBuildInputs = [ native190.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     runtime191 = import ./early-ruby-runtime.nix {
       inherit pkgs olderRubySource;
       rubyVersion = "1.9.1";
@@ -887,6 +911,21 @@ in
           export HOME="$TMPDIR"
           python3 ${../.}/tests/historical-composition.py ${native186.sdk} ${project186.release.projections.rubygems} ${project186.release.projections.rubygems.catalog} 1.8.6 1.0.22 --versionless --rubygems-version 1.3.7 --no-ruby-dsl
           touch "$out"
+        '';
+    ruby190-sdk = native190.sdk;
+    ruby190-app = project190.packages.app;
+    ruby190-native-extension = project190.tests;
+    ruby190-repository = project190.release.projections.rubygems;
+    ruby190-cli = cli.override {
+      projectRuby = native190.sdk;
+      projectNativeBuildInputs = [ native190.compiler ];
+    };
+    ruby190-input-composition =
+      pkgs.runCommand "ruby190-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native190.sdk} ${project190.release.projections.rubygems} ${project190.release.projections.rubygems.catalog} 1.9.0 1.17.3
+          touch $out
         '';
     ruby191-sdk = native191.sdk;
     ruby191-app = project191.packages.app;
