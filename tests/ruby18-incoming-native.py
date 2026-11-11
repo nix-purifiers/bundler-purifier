@@ -15,6 +15,9 @@ import subprocess
 import tempfile
 import threading
 import time
+import sys
+# Helper imports must not mutate the committed source used by this proof.
+sys.dont_write_bytecode = True
 from rubygems_dns_fixture import RegistryDNS
 
 ROOT = Path(__file__).resolve().parents[1]
