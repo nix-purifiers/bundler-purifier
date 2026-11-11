@@ -343,7 +343,10 @@ in build {
 
     if args.yaml_sdk:
         import copy
-        for label in ('missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes'):
+        yaml_negatives = ['missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes']
+        if args.ruby_patchlevel == 'absent':
+            yaml_negatives.append('fabricated-patchlevel')
+        for label in yaml_negatives:
             variant = copy.deepcopy(captured)
             if label == 'missing-snapshot':
                 variant.pop('bundlerNativeLock')
@@ -351,6 +354,8 @@ in build {
                 variant['bundlerNativeLock']['nativeHash'] = 'sha256-invalid'
             elif label == 'wrong-sdk':
                 variant['bundlerNativeLock']['observed']['bundler'] = '0.9.25'
+            elif label == 'fabricated-patchlevel':
+                variant['bundlerNativeLock']['observed']['patchlevel'] = 0
             else:
                 (project / 'Gemfile.lock').write_bytes(native_lock + b'\n')
             variant.pop('contentHash')
@@ -365,7 +370,7 @@ in build {
             finally:
                 (project / 'Gemfile.lock').write_bytes(native_lock)
                 (project / 'bundler-purifier.lock.json').write_bytes(lock_bytes)
-        receipt['nativeYamlNegatives'] = ['missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes']
+        receipt['nativeYamlNegatives'] = yaml_negatives
 
     archives = {path.name: path.read_bytes() for path in (repository / 'gems').glob('*.gem')}
     assert len(archives) == 3 + int(args.git_source)
