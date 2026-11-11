@@ -133,6 +133,9 @@ module PurifierEnvironmentObservation
       end
       installed_files = []
       Find.find(spec.full_gem_path) do |path|
+        # Native Gem135 extraction writes regular files. Directory symlinks
+        # would hide unarchived loadable files from Find's traversal.
+        fail!("unsupported symlink in native installed package") if File.symlink?(path)
         installed_files << File.expand_path(path) if File.file?(path)
       end
       fail!("native installed payload file set differs from archive") unless installed_files.sort == expected_files.sort

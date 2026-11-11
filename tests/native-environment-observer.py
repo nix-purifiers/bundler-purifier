@@ -69,6 +69,14 @@ with tempfile.TemporaryDirectory(prefix="native-environment-observer-") as tempo
     package = next(project.glob("vendor/gems/ruby/1.8/gems/incoming_consumer-*"))
     (package / "lib" / "openssl.rb").write_text('raise "extra installed shadow file executed"\n')
     run("extra-installed-shadow-file", project, False)
+    project = temporary / "extra-installed-shadow-directory"
+    shutil.copytree(relocated, project, symlinks=True)
+    package = next(project.glob("vendor/gems/ruby/1.8/gems/incoming_consumer-*"))
+    shadow = project / "unarchived-shadow"
+    shadow.mkdir()
+    (shadow / "hidden.rb").write_text('raise "unarchived shadow executed"\n')
+    (package / "lib" / "shadow").symlink_to(shadow, target_is_directory=True)
+    run("extra-installed-shadow-directory", project, False)
     project = temporary / "escaping-Gemfile"
     shutil.copytree(relocated, project, symlinks=True)
     gemfile_tripwire = temporary / "Gemfile-executed-outside"
