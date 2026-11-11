@@ -191,9 +191,9 @@ module PurifierGemInputs
         return values if full_gem_path.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0
       rescue Gem::Exception
         # Early RubyGems has no installation path until the SDK assigns a
-        # source to this genuine specification. Keep its native array then.
+        # source to this genuine archive specification. It is not an
+        # installed SDK gem; its declared inputs still need binding.
         raise unless loaded_from.nil?
-        return values
       end
       mapped = values.map do |dependency|
         PACKAGES.key?(dependency.name) && !dependency.is_a?(Requirements) ? dependency.dup.extend(Requirements) : dependency
