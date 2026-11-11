@@ -89,7 +89,7 @@ end
 paths = File.readlines("/proc/self/maps").map { |line| line.split.last }.uniq.select { |path| path =~ /json\/ext\/parser\.so$/ }
 abort "ambiguous loaded parser" unless paths.size == 1
 native = paths.first
-abort "wrong loaded gem" unless native.start_with?(Gem.loaded_specs.fetch("json").full_gem_path + "/")
+abort "wrong loaded gem" unless native.index(Gem.loaded_specs.fetch("json").full_gem_path + "/") == 0
 puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
 '''
     output = run('exec', 'ruby', '-e', runtime)
