@@ -168,7 +168,12 @@ module PurifierGemInputs
     def dependencies
       values = super
       return values if name.nil? || name.include?("\0") || values.none? { |dependency| PACKAGES.key?(dependency.name) } || full_gem_path.start_with?(RbConfig::CONFIG.fetch("prefix") + "/")
-      values.map { |dependency| PACKAGES.key?(dependency.name) ? dependency.dup.extend(Requirements) : dependency }
+      mapped = values.map do |dependency|
+        PACKAGES.key?(dependency.name) && !dependency.is_a?(Requirements) ? dependency.dup.extend(Requirements) : dependency
+      end
+      # RubyGems appends declarations through this native collection. A
+      # detached array would discard later add_dependency calls.
+      values.frozen? ? mapped.freeze : values.replace(mapped)
     end
   end
 

@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -27,7 +28,7 @@ args = parser.parse_args()
 tools, repository, catalog = args.tools, args.repository, args.catalog
 expected_ruby, expected_bundler = args.expected_ruby, args.expected_bundler
 extra_gem_path, versionless = args.extra_gem_path, args.versionless
-patchlevel, default_gem_version = {'1.8.7': (374, '2.6.14'), '1.9.3': (547, '2.6.14'), '2.0.0': (481, '2.6.14'), '2.1.3': (242, '2.6.14'), '2.5.8': (224, '3.1.2')}[expected_ruby]
+patchlevel, default_gem_version = {'1.8.7': (374, '2.6.14'), '1.9.3': (547, '2.6.14'), '2.0.0': (481, '2.6.14'), '2.1.3': (242, '2.6.14'), '4.0.9': (0, '3.7.2'), '2.5.8': (224, '3.1.2')}[expected_ruby]
 gem_version = args.rubygems_version or default_gem_version
 with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     project = Path(temporary)
@@ -61,7 +62,7 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     if versionless:
         assert b'BUNDLED WITH' not in lock
     else:
-        assert ('BUNDLED WITH\n   ' + expected_bundler).encode() in lock
+        assert re.search(rb'(?m)^BUNDLED WITH\n[ \t]+' + re.escape(expected_bundler.encode()) + rb'\n', lock)
     run('lock', '--local')
     assert (project / 'Gemfile.lock').read_bytes() == lock
     run('install', '--local')
@@ -133,6 +134,18 @@ abort "ordinary source reused for intrinsic" unless sources.size == 2 && !added.
 puts "SOURCE IDENTITY PASS"
 '''
         assert run('exec', 'ruby', '-e', identity).strip() == 'SOURCE IDENTITY PASS'
+    collection = r'''spec = Gem::Specification.new { |value| value.name="native_collection"; value.version="1.0" }
+spec.add_dependency("historical_greeting", ">= 99")
+values = spec.dependencies
+spec.add_dependency("ordinary_collection_control", ">= 2")
+abort "native dependency collection replaced" unless spec.dependencies.equal?(values)
+abort "native dependency declaration dropped" unless spec.dependencies.map { |dependency| dependency.name } == ["historical_greeting", "ordinary_collection_control"]
+abort "ordinary constraint changed" unless spec.dependencies.last.requirement.to_s == ">= 2"
+abort "SDK specification class changed" unless spec.class == Gem::Specification
+puts "NATIVE DEPENDENCY COLLECTION PASS"
+'''
+    assert run('exec', 'ruby', '-e', collection).strip() == 'NATIVE DEPENDENCY COLLECTION PASS'
+
     run('lock', '--local')
     assert (project / 'Gemfile.lock').read_bytes() == lock
 
