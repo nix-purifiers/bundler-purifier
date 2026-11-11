@@ -265,7 +265,7 @@ module PurifierGemInputs
     return if Bundler.settings[:disable_checksum_validation]
     source.remotes.each do |remote|
       next unless remote.scheme == "file"
-      path = defined?(URI::DEFAULT_PARSER) ? URI::DEFAULT_PARSER.unescape(remote.path) : URI.unescape(remote.path)
+      path = remote.parser.unescape(remote.path)
       Dir[File.join(path, "gems", "*.gem")].sort.each do |archive|
         spec = Bundler.rubygems.spec_from_gem(archive)
         next unless PACKAGES.key?(spec.name)
