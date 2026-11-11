@@ -383,6 +383,16 @@ in
       bundlerVersion = "0.9.26";
       bundlerHash = "sha256-z6SzCdAFdRtD3P7HtWmCn6o44bXjMnR6d+uX/3wca0E=";
     };
+    native19 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubyPackage =
+        (import olderRubySource {
+          system = "x86_64-linux";
+          config = { };
+        }).ruby_1_9;
+      rubyVersion = "1.9.3";
+      runtimeName = "ruby193";
+    };
     project = build {
       src = ./fixtures/ruby18;
       ruby = native.sdk;
@@ -392,6 +402,7 @@ in
   in
   {
     ruby18-sdk = native.sdk;
+    ruby19-sdk = native19.sdk;
     ruby18-rubygems-update = native.rubygemsUpdate;
     ruby18-bundler10-sdk = native10.sdk;
     ruby18-bundler09-sdk = native09.sdk;
