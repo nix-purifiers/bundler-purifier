@@ -221,6 +221,19 @@ module PurifierGemInputs
     end
   end
 
+  # Modern local! sources may index installed gems only. A declared Nix
+  # repository also supplies uninstalled archives, through the SDK's Index
+  # and cache lookup rather than through an ordinary network source.
+  module LocalRepositorySpecs
+    include LegacyRepositorySpecs
+
+    def specs
+      super.tap do |index|
+        cached_specs.each { |spec| index << spec }
+      end
+    end
+  end
+
   module Runtime
     def setup(*arguments)
       result = super
@@ -292,6 +305,7 @@ module PurifierGemInputs
       PACKAGES.values.reject { |package| package["intrinsic"] }.map { |package| package.fetch("repository") }.uniq.each do |repository|
         source = PurifierGemInputs.add_rubygems_source(@sources, repository)
         if source.respond_to?(:local!)
+          source.extend(LocalRepositorySpecs)
           source.local!
         else
           source.extend(LEGACY_YAML_LOCK ? YamlRepositorySpecs : LegacyRepositorySpecs)
