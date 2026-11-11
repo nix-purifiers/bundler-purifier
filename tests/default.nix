@@ -568,6 +568,7 @@ in
       sourceHash = "sha256-EY5vJK/OjooQ3O0jY1Fo5Y2myRIaIfEgyC9CXUCh4yE=";
       legacySSL = true;
     };
+    native184 = import ./ruby184-sdk.nix { inherit pkgs olderRubySource; };
     native186 = import ./ruby18-sdk.nix {
       inherit pkgs olderRubySource;
       rubyPackage = runtime186;
@@ -897,6 +898,7 @@ in
           touch $out
         '';
     rubygems137-update = native186.rubygemsUpdate;
+    ruby184-sdk = native184.sdk;
     ruby186-sdk = native186.sdk;
     ruby186-app = project186.packages.app;
     ruby186-native-extension = project186.tests;
