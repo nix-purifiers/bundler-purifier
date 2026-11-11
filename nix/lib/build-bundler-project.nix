@@ -709,7 +709,7 @@ let
     "bundle"
   ];
 in
-if builtins.pathExists lockFile && ((readJson lockFile).version or null) == 4 then
+if (import ./native-lock-version.nix lockFile) == 4 then
   assert
     without == [ ]
     || throw "bundler-purifier: pre-lockfile profiles currently require the default context";

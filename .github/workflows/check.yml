@@ -287,6 +287,7 @@ jobs:
         run: |
           mapfile -t prelock < <(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby184-bundler08-sdk .#checks.x86_64-linux.ruby184-bundler08-cli)
           python3 tests/prelock-native.py --sdk "${prelock[0]}" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-native-evidence"
+          python3 tests/prelock-input.py --provider "$RUNNER_TEMP/bundler08-native-evidence/project" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-input-evidence"
           python3 tests/prelock-relocation.py --project "$RUNNER_TEMP/bundler08-native-evidence/project" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-relocation-evidence"
 
       - name: Retain historical incoming composition receipts
@@ -296,7 +297,7 @@ jobs:
           name: ruby18-incoming-composition
           path: |
             ${{ runner.temp }}/bundler08-*-evidence/receipt.json
-            ${{ runner.temp }}/bundler08-native-evidence/logs/*
+            ${{ runner.temp }}/bundler08-*-evidence/logs/*
             ${{ runner.temp }}/bundler08-relocation-evidence/*.stdout
             ${{ runner.temp }}/bundler08-relocation-evidence/*.stderr
             ${{ runner.temp }}/ruby18-incoming*-evidence/receipt.json

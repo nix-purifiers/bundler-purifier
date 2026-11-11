@@ -40,7 +40,7 @@ let
   # The path sources outside the project are on disk beside it, at the
   # paths Gemfile.lock gives them.
   externalPaths =
-    if ((builtins.fromJSON (builtins.readFile lockFile')).version or null) == 4 then
+    if (import ./native-lock-version.nix lockFile') == 4 then
       { }
     else
       builtins.listToAttrs (
