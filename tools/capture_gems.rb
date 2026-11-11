@@ -200,7 +200,9 @@ selected.values.each do |original|
       # as genuine dependencies before the SDK writes the archive.
       spec.dependencies.replace(spec.dependencies.map do |dependency|
         if dependency.is_a?(PurifierGemInputs::Requirements)
-          Gem::Dependency.new(dependency.name, dependency.requirement, dependency.type)
+          # Parse the effective clause afresh: old Version objects cache a
+          # process-specific hash that their YAML serializer also writes.
+          Gem::Dependency.new(dependency.name, dependency.requirement.to_s, dependency.type)
         else
           dependency
         end
