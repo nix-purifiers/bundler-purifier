@@ -107,6 +107,25 @@ puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
         parsers = [member for member in payload if member.isfile() and member.name.endswith('json/ext/parser.so')]
         assert len(parsers) == 1
         assert hashlib.sha256(payload.extractfile(parsers[0]).read()).hexdigest() == native_hash
+    checksum_lines = re.findall(rb'(?m)^[ \t]+([^ \n]+) \(([^)]+)\) sha256=([0-9a-f]{64})$', lock)
+    if checksum_lines:
+        by_archive = {Path(entry['archive']).name: entry for entry in entries}
+        for name, version, digest in checksum_lines:
+            archive_name = name.decode() + '-' + version.decode() + '.gem'
+            assert archive_name in by_archive
+            archive = repository / by_archive[archive_name]['archive']
+            assert hashlib.sha256(archive.read_bytes()).hexdigest() == digest.decode()
+        assert len(checksum_lines) == len(entries)
+        tampered = re.sub(rb'sha256=[0-9a-f]{64}', b'sha256=' + b'0' * 64, lock, count=1)
+        assert tampered != lock
+        (project / 'Gemfile.lock').write_bytes(tampered)
+        try:
+            failure = run('install', '--local', succeeds=False).lower()
+            assert 'checksum' in failure and ('mismatch' in failure or 'does not match' in failure), failure
+        finally:
+            (project / 'Gemfile.lock').write_bytes(lock)
+        print('PASS native archive checksum bindings and tampered checksum rejection')
+
     if versionless:
         identity = r'''klass = Bundler::Source::Rubygems
 repository = PurifierGemInputs::PACKAGES.values.find { |package| !package["intrinsic"] }.fetch("repository")
