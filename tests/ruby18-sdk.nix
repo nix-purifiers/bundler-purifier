@@ -45,7 +45,10 @@ let
         export HOME=$TMPDIR LC_ALL=C
         ruby -rfileutils -rrubygems/package -e 'Gem::Package.new(ARGV[0]).extract_files("source")' ${rubygemsUpdate}
         cd source
-        ${ruby}/bin/ruby setup.rb --prefix="$out" ${documentFlags}
+        # The extraction helper's modern gem paths are not this SDK's
+        # installation repository. Old setup scripts inspect installed specs.
+        GEM_HOME="$out/gems" GEM_PATH="$out/gems" \
+          ${ruby}/bin/ruby setup.rb --prefix="$out" ${documentFlags}
       '';
   baseSdk =
     pkgs.runCommand "${runtimeName}-rubygems${gemId}-base" { nativeBuildInputs = [ pkgs.makeWrapper ]; }
