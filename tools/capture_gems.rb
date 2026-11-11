@@ -194,20 +194,6 @@ selected.values.each do |original|
     else
       original.dup
     end
-    if legacy_environment && defined?(PurifierGemInputs)
-      # Native YAML serialization reads dependency instance state rather
-      # than our binding accessors. Materialize only declared input bindings
-      # as genuine dependencies before the SDK writes the archive.
-      spec.dependencies.replace(spec.dependencies.map do |dependency|
-        if dependency.is_a?(PurifierGemInputs::Requirements)
-          # Parse the effective clause afresh: old Version objects cache a
-          # process-specific hash that their YAML serializer also writes.
-          Gem::Dependency.new(dependency.name, dependency.requirement.to_s, dependency.type)
-        else
-          dependency
-        end
-      end)
-    end
     spec.extensions = []
     spec.require_paths = require_paths.reject { |path| (path.index("/") == 0) }
     spec.require_paths = ["lib"] if spec.require_paths.empty?
