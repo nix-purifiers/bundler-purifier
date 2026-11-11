@@ -3,6 +3,7 @@
 require "bundler"
 require File.expand_path("repository_uri", File.dirname(__FILE__))
 require File.expand_path("ruby_config", File.dirname(__FILE__))
+require File.expand_path("native_index", File.dirname(__FILE__))
 module PurifierGemInputs
   CLASS_METHODS_CAN_MOVE = begin
     probe = Class.new { def purifier_probe; true; end }
@@ -196,7 +197,7 @@ module PurifierGemInputs
 
   module IntrinsicSpecs
     def specs
-      @purifier_intrinsic_specs ||= Bundler::Index.build do |index|
+      @purifier_intrinsic_specs ||= PurifierNativeIndex.build do |index|
         Dir[File.join(Gem.default_dir, "specifications", "{,default/}*.gemspec")].each do |path|
           spec = Gem::Specification.load(path)
           next unless spec && (package = PACKAGES[spec.name]) && package["intrinsic"]
@@ -302,7 +303,7 @@ module PurifierGemInputs
     end
 
     def specs
-      @purifier_yaml_specs ||= Bundler::Index.build do |index|
+      @purifier_yaml_specs ||= PurifierNativeIndex.build do |index|
         remotes.each do |remote|
           next unless remote.scheme == "file"
           path = URI.unescape(remote.path)

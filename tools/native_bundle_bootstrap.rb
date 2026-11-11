@@ -6,6 +6,7 @@ gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0")
 require "bundler"
 require "bundler/cli"
 require "bundler/definition"
+require File.expand_path("native_index", File.dirname(__FILE__))
 
 # Early Path::Installer stores @spec directly, while newer RubyGems'
 # inherited accessor expects @package. Later Bundler supplies this reader.
@@ -68,11 +69,13 @@ if !Bundler.respond_to?(:app_cache) && Bundler.respond_to?(:cache)
       path ? Pathname.new(path) : purifier_original_cache
     end
   end
-  class << Bundler::Index
-    alias_method :purifier_original_application_cached_gems, :application_cached_gems
-    def application_cached_gems
-      path = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
-      path ? from_cached_specs(path) : purifier_original_application_cached_gems
+  if Bundler::Index.respond_to?(:application_cached_gems)
+    class << Bundler::Index
+      alias_method :purifier_original_application_cached_gems, :application_cached_gems
+      def application_cached_gems
+        path = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
+        path ? from_cached_specs(path) : purifier_original_application_cached_gems
+      end
     end
   end
 end
@@ -132,16 +135,16 @@ if !Bundler::Definition.respond_to?(:build) && ARGV.first == "install" && ARGV.d
   end
   class Bundler::Installer
     def remote_index
-      @remote_index ||= Bundler::Index.build do |index|
+      @remote_index ||= PurifierNativeIndex.build do |index|
         sources.each do |source|
           if source.respond_to?(:local_specs)
-            index.use source.local_specs
+            PurifierNativeIndex.use(index, source.local_specs)
           elsif source.is_a?(Bundler::Source::Rubygems) && source.uri.scheme == "file"
-            index.use source.specs
+            PurifierNativeIndex.use(index, source.specs)
           end
         end
-        index.use Bundler::Index.installed_gems
-        index.use Bundler::Index.cached_gems
+        PurifierNativeIndex.use(index, PurifierNativeIndex.installed)
+        PurifierNativeIndex.use(index, PurifierNativeIndex.cached)
       end
     end
     private :remote_index
