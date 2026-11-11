@@ -179,19 +179,76 @@ Native package creation uses RubyGems' package API on codecs without
 `gem build --output`.
 
 The CLI keeps its helper Ruby independent of these project SDKs. `indexRuby`
-can select an independent native index encoder; MRI 1.8 defaults to the
-available Ruby 3.4 helper. The shared legacy codec candidate (purifier PR #7)
-is pinned explicitly in `flake.lock`, without changing the public input URL.
-It backports reproducible package metadata while retaining native encoding.
+can select an independent native index encoder. The post-lockfile MRI 1.8
+fixtures use the available Ruby 3.4 helper. The released shared Core is
+pinned explicitly in `flake.lock`; its compatibility codec retains native
+encoding while making package metadata reproducible.
 Stable native gem requirements accept both RubyGems' patchlevel representation
 and the resolver's bare representation of the same Ruby release point.
 Existing exact preview requirements remain unchanged.
 
 The Ruby 2.5 native input check also binds an unreachable ordinary source to
 a Nix-provided graph, installs it offline and executes the compiled extension.
-Incoming Nix composition on Ruby 1.8, earlier SDK/manager epochs, other
-architectures and preview SDKs remain further checks. These are exact tested
-points and operations; they do not establish an intervening version interval.
+Additional earlier and preview SDK combinations are exercised by the native
+integration checks in `tests/default.nix` and CI. Support is recorded as exact
+tested points and operations; it does not establish an intervening version
+interval.
+
+### Pre-lockfile Bundler SDKs
+
+Select these SDKs explicitly through their CLI variants on x86_64-linux:
+
+| CLI check attribute | Project Ruby | RubyGems | Bundler artifact | Native JSON |
+| --- | --- | --- | --- | --- |
+| `ruby183-bundler031-cli` | 1.8.3 | 1.0.1 | 0.3.1 | 1.1.3 |
+| `ruby184-bundler08-cli` | 1.8.4 | 1.3.5 | 0.8.1 | 1.8.6 |
+
+Both Ruby releases lack `RUBY_PATCHLEVEL`; neither is p0. The original
+Bundler 0.3.1 artifact reports `Bundler::VERSION` as `0.5.0`.
+
+For example, run the selected CLI from your project directory:
+
+```sh
+nix shell 'github:nix-purifiers/bundler-purifier#checks.x86_64-linux.ruby183-bundler031-cli'
+bundler-purifier lock
+bundler-purifier prefetch
+bundler-purifier shell ruby -Ilib your_program.rb
+```
+
+This path resolves the default context from pure-Ruby or precompiled gem
+archives from `vendor/cache`, an existing native cache, or declared Nix inputs. It does not compile source
+extensions during resolution. `lock --input REFERENCE` declares a Nix input.
+Commit `bundler-purifier.lock.json` and the required vendored archives.
+These SDKs have no native `Gemfile.lock`; the purifier record captures the
+manifest, SDK identity, selected graph and generated-state evidence.
+`prefetch` regenerates the environment in a Nix builder, and `shell` uses
+the SDK's public environment setup. Original `gem exec` equivalence is not
+claimed. The generic helper CLI does not infer these pre-lockfile SDKs;
+use the explicit variant or `cli.override { projectRuby = sdk; }`.
+
+The 0.3.1 profile selects Core's `legacy-numeric-v1` projection scheme and
+the genuine RubyGems 1.0.1 index encoder. Direct
+`purifier.rubygemsProjections` callers supply `versionScheme`,
+`nativeSdkIdentity` and `legacyIndexRuby`. Provided entries require the same
+SDK identity and exact index-runtime Nix dependency context. Preserve the
+SDK recipe/reference form across producer and consumer: a derivation and
+`builtins.storePath` of the same SDK bytes carry different dependency
+contexts and cannot reuse each other's numeric catalog entries. Other
+profiles retain the default version scheme.
+
+RubyGems 1.0.1 cannot run the original Gemcutter publisher. Select its
+separately attested Ruby 1.8.4 / RubyGems 1.3.5 SDK when publishing:
+
+```sh
+publisher_sdk="$(nix build --no-link --print-out-paths \
+  'github:nix-purifiers/bundler-purifier#checks.x86_64-linux.ruby184-bundler08-sdk')"
+bundler-purifier publish --publisher-sdk "$publisher_sdk"
+```
+
+The publisher uses Gemcutter 0.3.0 and publisher-only `json_pure` 1.8.6.
+Its identity is recorded separately from the project's SDK in the local
+publication receipt. These are bounded SDK observations, with no claim
+that every intervening release or untested SDK combination is supported.
 
 ### An external build
 
