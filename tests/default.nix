@@ -393,6 +393,22 @@ in
       rubyVersion = "1.9.3";
       runtimeName = "ruby193";
     };
+    native20 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubyPackage =
+        (import olderRubySource {
+          system = "x86_64-linux";
+          config = { };
+        }).ruby_2_0;
+      rubyVersion = "2.0.0";
+      runtimeName = "ruby200";
+    };
+    project20 = build {
+      src = ./fixtures/ruby20;
+      ruby = native20.sdk;
+      nativeBuildInputs = [ native20.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project19 = build {
       src = ./fixtures/ruby19;
       ruby = native19.sdk;
@@ -408,6 +424,14 @@ in
   in
   {
     ruby18-sdk = native.sdk;
+    ruby20-sdk = native20.sdk;
+    ruby20-native-extension = project20.tests;
+    ruby20-app = project20.packages.app;
+    ruby20-repository = project20.release.projections.rubygems;
+    ruby20-cli = cli.override {
+      projectRuby = native20.sdk;
+      projectNativeBuildInputs = [ native20.compiler ];
+    };
     ruby19-sdk = native19.sdk;
     ruby19-native-extension = project19.tests;
     ruby19-app = project19.packages.app;
