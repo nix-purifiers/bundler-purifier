@@ -1,17 +1,15 @@
 {
   "version": 3,
-  "definitionHash": "sha256-LKAwHef9xD3SSszkHPkWqj1BKfnzQ24TRbIp9tRpoPI=",
+  "definitionHash": "sha256-oA4Hg8umTGvWuie8Bk0Z2vVbSbxPR87Hvh2q5j+6Wgk=",
   "ruby": "4.0.9",
   "bundlerHash": "sha256-eXiorGSHZ/XmNbxSJEW3noClK5B6OaNsLYCF7WvHYq4=",
   "gemHashes": {
-    "rainbow-3.1.1.gem": "sha256-A5SRqjqJ9C76HW3sL8TmLt6W62rNleUvGtWBGCt5vGo=",
-    "rake-13.4.2.gem": "sha256-y4JbK9Xx+Okco3vdtLmq80VVG0cx2mKUm+AC+okoNwE=",
     "json-2.18.0.gem": "sha256-sQUGruQYP1z0ng78SAc9e3WEPON4LGjb63YzUcCP1QU="
   },
   "executables": {
-    "greeting": [
-      "greet"
+    "historical_greeting": [
+      "historical-greeting"
     ]
   },
-  "contentHash": "sha256-NNbs6NzYcnt9n4eV0znm7+KN4ANqMKCQtvVppsoe7FU="
+  "contentHash": "sha256-nu9uftzWtXZPcEjg1YRRNnvJyb1a+T3pY+RE0MDmWr4="
 }

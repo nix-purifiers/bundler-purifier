@@ -428,7 +428,7 @@ in
     project40 = build {
       src = ./fixtures/ruby40;
       ruby = pkgs.ruby_4_0;
-      checkCommand = "bundle exec ruby -Ilib -e 'require %q(greeting); require %q(bundler/version); abort unless RUBY_VERSION == %q(4.0.9) && Bundler::VERSION == %q(4.0.20); puts Greeting.hello(%q(nix))'";
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
     project19 = build {
       src = ./fixtures/ruby19;

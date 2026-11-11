@@ -1,4 +1,0 @@
-#!/usr/bin/env ruby
-require "greeting"
-
-puts Greeting.hello(ARGV.fetch(0, "world"))

@@ -135,6 +135,19 @@ jobs:
               --results "$RUNNER_TEMP/ruby${point}-incoming-evidence"
           done
 
+      - name: Ruby 4.0 and Bundler 4 native incoming composition
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        shell: bash
+        run: |
+          mapfile -t sdk < <(nix build --no-link --print-out-paths \
+            .#checks.x86_64-linux.ruby40-cli \
+            .#checks.x86_64-linux.ruby40-sdk)
+          python3 tests/ruby18-incoming-native.py "${sdk[0]}" "${sdk[1]}" \
+            --ruby-version 4.0.9 --ruby-patchlevel 0 --rubygems-version 3.7.2 \
+            --bundler-version 4.0.20 --bundler-hash 'sha256-eXiorGSHZ/XmNbxSJEW3noClK5B6OaNsLYCF7WvHYq4=' \
+            --sdk-check ruby40-sdk --provider-check ruby40-app \
+            --results "$RUNNER_TEMP/ruby40-incoming-evidence"
+
       - name: Retain historical incoming composition receipts
         if: always() && runner.os == 'Linux' && runner.arch == 'X64'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -173,4 +186,12 @@ jobs:
             ${{ runner.temp }}/ruby21-incoming-evidence/consumer/incoming_consumer.gemspec
             ${{ runner.temp }}/ruby21-incoming-evidence/consumer/lib/incoming_consumer.rb
             ${{ runner.temp }}/ruby21-incoming-evidence/consumer.nix
+            ${{ runner.temp }}/ruby40-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby40-incoming-evidence/logs/*
+            ${{ runner.temp }}/ruby40-incoming-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby40-incoming-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby40-incoming-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby40-incoming-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby40-incoming-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby40-incoming-evidence/consumer.nix
           if-no-files-found: ignore
