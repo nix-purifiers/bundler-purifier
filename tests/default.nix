@@ -410,6 +410,7 @@ in
     ruby18-sdk = native.sdk;
     ruby19-sdk = native19.sdk;
     ruby19-native-extension = project19.tests;
+    ruby19-app = project19.packages.app;
     ruby19-repository = project19.release.projections.rubygems;
     ruby19-cli = cli.override {
       projectRuby = native19.sdk;
