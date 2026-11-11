@@ -133,22 +133,15 @@ if !Bundler::Definition.respond_to?(:build) && ARGV.first == "install" && ARGV.d
     end
     private :checkout, :cache, :revision, :purifier_materialize_checkout, :purifier_pinned_checkout
   end
-  class Bundler::Installer
-    def remote_index
-      @remote_index ||= PurifierNativeIndex.build do |index|
-        sources.each do |source|
-          if source.respond_to?(:local_specs)
-            PurifierNativeIndex.use(index, source.local_specs)
-          elsif source.is_a?(Bundler::Source::Rubygems) && source.uri.scheme == "file"
-            PurifierNativeIndex.use(index, source.specs)
-          end
-        end
-        PurifierNativeIndex.use(index, PurifierNativeIndex.installed)
-        PurifierNativeIndex.use(index, PurifierNativeIndex.cached)
-      end
+  index_method = PurifierNativeIndex.installer_index_method(Bundler::Installer)
+  # Both names denote the SDK's own default resolver index. Only the
+  # native command lacking --local receives this local source collection.
+  Bundler::Installer.class_eval <<-RUBY, __FILE__, __LINE__ + 1
+    def #{index_method}
+      @purifier_local_index ||= PurifierNativeIndex.local(sources)
     end
-    private :remote_index
-  end
+    private :#{index_method}
+  RUBY
 end
 if !Bundler::Definition.respond_to?(:build) && ENV["BUNDLER_PURIFIER_INPUT_DATA"]
   # A locked 0.9 Definition bypasses Gemfile evaluation, so the lent facade

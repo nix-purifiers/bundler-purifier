@@ -600,8 +600,34 @@ if PurifierGemInputs::LEGACY_SOURCE_ARRAY
     end
   end
   target = PurifierGemInputs::LEGACY_YAML_LOCK ? Bundler::Environment : Bundler::Definition
-  PurifierGemInputs.install_patch(target, PurifierGemInputs::InlineDefinitionSources)
-  target.send(:private, :resolve) if PurifierGemInputs::LEGACY_YAML_LOCK
+  if target.method_defined?(:resolve) || target.private_method_defined?(:resolve)
+    PurifierGemInputs.install_patch(target, PurifierGemInputs::InlineDefinitionSources)
+    target.send(:private, :resolve) if PurifierGemInputs::LEGACY_YAML_LOCK
+  else
+    module PurifierGemInputs::InlineInstallerSpecsSources
+      def specs(*arguments)
+        previous = Thread.current[:purifier_definition_sources]
+        Thread.current[:purifier_definition_sources] = sources
+        super(*arguments)
+      ensure
+        Thread.current[:purifier_definition_sources] = previous
+      end
+    end
+    module PurifierGemInputs::InlineRuntimeSpecsSources
+      def specs(*arguments)
+        previous = Thread.current[:purifier_definition_sources]
+        Thread.current[:purifier_definition_sources] = sources
+        super(*arguments)
+      ensure
+        Thread.current[:purifier_definition_sources] = previous
+      end
+      private :specs
+    end
+    require "bundler/installer"
+    require "bundler/runtime"
+    PurifierGemInputs.install_patch(Bundler::Installer, PurifierGemInputs::InlineInstallerSpecsSources)
+    PurifierGemInputs.install_patch(Bundler::Runtime, PurifierGemInputs::InlineRuntimeSpecsSources)
+  end
   PurifierGemInputs.install_patch(class << Bundler::Resolver; self; end, PurifierGemInputs::InlineResolverSources)
 end
 
@@ -649,7 +675,14 @@ if PurifierGemInputs::LEGACY_YAML_LOCK
       @purifier_deferred_index ||= PurifierGemInputs::DeferredIndex.new { super }
     end
   end
+  module PurifierGemInputs::EarlyDeferredOrdinaryIndex
+    def index
+      @purifier_deferred_index ||= PurifierGemInputs::DeferredIndex.new { super }
+    end
+  end
   require "bundler/installer"
-  PurifierGemInputs.install_patch(Bundler::Installer, PurifierGemInputs::DeferredOrdinaryIndex)
+  index_patch = PurifierNativeIndex.installer_index_method(Bundler::Installer) == :remote_index ?
+    PurifierGemInputs::DeferredOrdinaryIndex : PurifierGemInputs::EarlyDeferredOrdinaryIndex
+  PurifierGemInputs.install_patch(Bundler::Installer, index_patch)
   Bundler::Installer.send(:private, :remote_index)
 end

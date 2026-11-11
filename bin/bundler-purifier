@@ -822,6 +822,8 @@ module BundlerPurifier
         # Early RubyGems selects the same destination through its native
         # RUBYGEMS_HOST setting, before it gained the --host CLI option.
         push_environment["RUBYGEMS_HOST"] = host
+        # The genuine pre-builtin Gemcutter plugin uses this destination.
+        push_environment["GEMCUTTER_URL"] = host
         push_arguments = []
         skip_value = false
         args.each do |arg|
