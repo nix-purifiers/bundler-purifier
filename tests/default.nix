@@ -393,6 +393,12 @@ in
       rubyVersion = "1.9.3";
       runtimeName = "ruby193";
     };
+    project19 = build {
+      src = ./fixtures/ruby19;
+      ruby = native19.sdk;
+      nativeBuildInputs = [ native19.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project = build {
       src = ./fixtures/ruby18;
       ruby = native.sdk;
@@ -403,6 +409,12 @@ in
   {
     ruby18-sdk = native.sdk;
     ruby19-sdk = native19.sdk;
+    ruby19-native-extension = project19.tests;
+    ruby19-repository = project19.release.projections.rubygems;
+    ruby19-cli = cli.override {
+      projectRuby = native19.sdk;
+      projectNativeBuildInputs = [ native19.compiler ];
+    };
     ruby18-rubygems-update = native.rubygemsUpdate;
     ruby18-bundler10-sdk = native10.sdk;
     ruby18-bundler09-sdk = native09.sdk;
