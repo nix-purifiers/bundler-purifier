@@ -250,8 +250,17 @@ in build {
     repository = Path(run('pure-projection', ['nix-build', expression, '-A', 'release.projections.rubygems', '--no-out-link']).strip())
     output_info = json.loads(run('output-info', ['nix', 'path-info', '--json', tests, repository, args.cli, args.sdk, actual_prefix]))
     receipt['outputInfo'] = output_info
-    derivations = sorted({info['deriver'] for info in output_info.values()})
-    run('derivations', ['nix', 'derivation', 'show', *derivations])
+    # A cache's historical deriver may be absent; verify a currently valid
+    # derivation still produces the exact native interpreter output.
+    native_derivers = run('native-valid-derivers', ['nix-store', '--query', '--valid-derivers', actual_prefix]).splitlines()
+    assert native_derivers, 'native interpreter has no available derivation'
+    receipt['nativeInterpreterDerivers'] = native_derivers
+    derivations = sorted({info['deriver'] for path, info in output_info.items() if path != actual_prefix} | set(native_derivers))
+    derivation_data = json.loads(run('derivations', ['nix', 'derivation', 'show', *derivations]))
+    rows = derivation_data.get('derivations', derivation_data)
+    assert any(row['system'] == 'x86_64-linux' and any(
+        output.get('path') in (actual_prefix, actual_prefix.removeprefix('/nix/store/'))
+        for output in row['outputs'].values()) for row in rows.values()), 'derivation must produce the actual interpreter'
     if args.versionless and not args.yaml_sdk:
         if args.extra_gem_path:
             higher_env = dict(env)
