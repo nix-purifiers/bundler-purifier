@@ -188,7 +188,7 @@ module PurifierGemInputs
       values = super
       return values if name.nil? || name.include?("\0") || !values.any? { |dependency| PACKAGES.key?(dependency.name) }
       begin
-        return values if full_gem_path.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0
+        return values if full_gem_path.to_s.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0
       rescue Gem::Exception
         # Early RubyGems has no installation path until the SDK assigns a
         # source to this genuine archive specification. It is not an

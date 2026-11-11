@@ -486,7 +486,7 @@ paths = File.readlines("/proc/self/maps").map { |line| line.split.last }.uniq.se
 abort "ambiguous parser" unless paths.size == 1
 native = paths.first
 abort "not installed ordinary gem" unless native.index(ENV.fetch("GEM_HOME") + "/") == 0
-puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
+puts "NATIVE|#{native}|#{File.open(native, "rb") { |file| Digest::SHA256.hexdigest(file.read) }}"
 '''
         ordinary_output = run('ordinary-runtime', [args.sdk / 'bin/ruby', '-e', ordinary_code], ordinary, ordinary_env)
         assert f'ORDINARY|{args.ruby_version}|{args.ruby_patchlevel}|{args.rubygems_version}|42' in ordinary_output.splitlines()
