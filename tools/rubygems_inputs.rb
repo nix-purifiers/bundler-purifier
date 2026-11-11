@@ -11,6 +11,7 @@ module PurifierGemInputs
   end
   INSTANCE_PATCHES = {}
   INSTANCE_FACTORIES = {}
+  MODULE_PATCHES = {}
 
   def self.decorate_instance(object)
     return object if object.frozen?
@@ -55,6 +56,35 @@ module PurifierGemInputs
     end
     ObjectSpace.each_object(target) { |object| decorate_instance(object) }
   end
+  def self.install_module_patch(target, patch)
+    patches = (MODULE_PATCHES[target] ||= [])
+    return if patches.include?(patch)
+    first = patches.empty?
+    patches << patch
+    if first
+      eigenclass = class << target; self; end
+      [:included, :extended].each do |hook|
+        original = eigenclass.instance_method(hook)
+        eigenclass.send(:define_method, hook) do |receiver|
+          result = original.bind(self).call(receiver)
+          (PurifierGemInputs::MODULE_PATCHES[self] || []).each do |extension|
+            if hook == :included
+              PurifierGemInputs.install_patch(receiver, extension)
+            else
+              receiver.extend(extension) unless receiver.frozen?
+            end
+          end
+          result
+        end
+        eigenclass.send(:private, hook)
+      end
+    end
+    ObjectSpace.each_object(Class) do |klass|
+      install_patch(klass, patch) if klass.ancestors.include?(target)
+    end
+    ObjectSpace.each_object(target) { |object| object.extend(patch) unless object.frozen? }
+  end
+
   # Before Ruby 2, include cannot override methods defined by a class.
   # Move just the intercepted methods into an included predecessor so the
   # same patches retain their ordinary super chain on the old interpreter.
@@ -62,8 +92,8 @@ module PurifierGemInputs
     return if target.ancestors.include?(patch)
     if target.respond_to?(:prepend)
       target.send(:prepend, patch)
-    elsif target.is_a?(Class) && !CLASS_METHODS_CAN_MOVE
-      install_instance_patch(target, patch)
+    elsif !CLASS_METHODS_CAN_MOVE
+      target.is_a?(Class) ? install_instance_patch(target, patch) : install_module_patch(target, patch)
     else
       # Ruby 1.8 does not propagate later module includes to classes that
       # already included it (Bundler::MatchPlatform is one such module).
