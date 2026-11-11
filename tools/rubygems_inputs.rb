@@ -258,6 +258,24 @@ module PurifierGemInputs
     end
   end
 
+  # Native Bundler checksum locks need the checksums of the actual local
+  # archives before frozen resolution, just as an ordinary source supplies.
+  def self.register_repository_checksums(source)
+    return unless defined?(Bundler::Checksum) && Bundler::Checksum.respond_to?(:from_gem) && source.respond_to?(:checksum_store)
+    return if Bundler.settings[:disable_checksum_validation]
+    source.remotes.each do |remote|
+      next unless remote.scheme == "file"
+      path = defined?(URI::DEFAULT_PARSER) ? URI::DEFAULT_PARSER.unescape(remote.path) : URI.unescape(remote.path)
+      Dir[File.join(path, "gems", "*.gem")].sort.each do |archive|
+        spec = Bundler.rubygems.spec_from_gem(archive)
+        next unless PACKAGES.key?(spec.name)
+        File.open(archive, "rb") do |input|
+          source.checksum_store.register(spec, Bundler::Checksum.from_gem(input, archive))
+        end
+      end
+    end
+  end
+
   module Dsl
     def to_definition(*arguments)
       intrinsics = PACKAGES.values.select { |package| package["intrinsic"] }
@@ -279,6 +297,7 @@ module PurifierGemInputs
           source.extend(LEGACY_YAML_LOCK ? YamlRepositorySpecs : LegacyRepositorySpecs)
         end
         source.cached! if source.respond_to?(:cached!) && ENV["BUNDLER_PURIFIER_RUNTIME"] != "1"
+        PurifierGemInputs.register_repository_checksums(source)
       end
       lockfile, unlock = arguments
       if unlock != true && lockfile && File.file?(lockfile)
