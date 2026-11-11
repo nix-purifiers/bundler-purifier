@@ -256,6 +256,7 @@ in
         export HOME="$TMPDIR"
         ruby ${../.}/tests/native-environment-contract.rb
         ruby ${../.}/tests/native-environment-sdk-command.rb
+        ruby ${../.}/tests/native-environment-owned-directories.rb
         touch "$out"
       '';
 

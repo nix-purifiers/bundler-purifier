@@ -34,7 +34,27 @@ class PurifierNativeEnvironmentFrontend
     @context.fail!(error.message)
   end
 
+  # Validate each ancestor before creating a project-owned directory. In
+  # particular, mkdir_p must never follow a vendor/state symlink outside it.
+  def owned_directory(path, mode:, create: true)
+    expanded = File.expand_path(path)
+    C.reject!("native directory escapes project role") unless expanded.start_with?(@root + "/")
+    relative = expanded.delete_prefix(@root + "/")
+    current = @root
+    relative.split("/").each do |part|
+      current = File.join(current, part)
+      if File.exist?(current) || File.symlink?(current)
+        C.reject!("native directory is not an owned directory") if File.symlink?(current) || !File.directory?(current)
+      elsif create
+        Dir.mkdir(current, mode)
+      end
+    end
+    expanded
+  end
+
   def inputs(refresh: false)
+    owned_directory(@context.state_dir, mode: 0700)
+    owned_directory(File.join(@context.state_dir, "inputs"), mode: 0700)
     @context.resolve_project_inputs(refresh: refresh)
     @inputs = @context.instance_variable_get(:@project_inputs)
     @views = @context.instance_variable_get(:@input_views)
@@ -95,7 +115,7 @@ class PurifierNativeEnvironmentFrontend
     specifications = Dir.glob("**/*.gemspec", base: @root).reject { |path| path.start_with?("vendor/") }
     manifests = specifications.dup
     manifests << ".ruby-version" if File.file?(File.join(@root, ".ruby-version"))
-    FileUtils.mkdir_p(@context.state_dir, mode: 0700)
+    owned_directory(@context.state_dir, mode: 0700)
     Dir.mktmpdir("native-capture-", @context.state_dir) do |arena|
       workspace = File.join(arena, "project")
       resolution = P.resolve(@root, @sdk, available, workspace, bindings: bindings, project_gemspecs: manifests)
@@ -126,8 +146,7 @@ class PurifierNativeEnvironmentFrontend
   def vendor(source, relative, expected_hash)
     C.reject!("native selected cache bytes changed during capture") unless C.hash_file(source) == expected_hash
     directory = File.join(@root, File.dirname(relative))
-    FileUtils.mkdir_p(directory, mode: 0755)
-    C.reject!("native vendor directory escapes project role") unless File.realpath(directory).start_with?(@root + "/")
+    owned_directory(directory, mode: 0755)
     destination = File.join(@root, relative)
     if File.exist?(destination) || File.symlink?(destination)
       C.reject!("native vendor destination conflicts with captured bytes") unless File.file?(destination) && !File.symlink?(destination) && C.hash_file(destination) == expected_hash
@@ -163,7 +182,7 @@ class PurifierNativeEnvironmentFrontend
 
   def prefetch
     document = read
-    FileUtils.mkdir_p(@context.state_dir, mode: 0700)
+    owned_directory(@context.state_dir, mode: 0700)
     app = S.run("nix-build", File.join(@context.lib_dir, "realize.nix"), "-A", "packages.app", *realize_args,
                 "--out-link", File.join(@context.state_dir, "native-app"), cwd: @root,
                 deadline_seconds: 3600, stream_stderr: true).strip

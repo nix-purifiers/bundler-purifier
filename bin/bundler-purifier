@@ -329,6 +329,15 @@ module BundlerPurifier
     @project_inputs = []
     @input_views = []
     return if references.empty?
+    # Input GC roots are owned working directories beside the explicitly
+    # chosen lockfile. Validate before the resolver creates any output links.
+    [state_dir, File.join(state_dir, "inputs")].each do |directory|
+      if File.exist?(directory) || File.symlink?(directory)
+        fail!("Nix input state is not an owned directory") if File.symlink?(directory) || !File.directory?(directory)
+      else
+        Dir.mkdir(directory, 0700)
+      end
+    end
     request = { "references" => references, "previous" => previous, "refresh" => refresh,
                 "roots" => File.join(state_dir, "inputs") }
     output, status = Open3.capture2("python3", File.join(tools_dir, "resolve_inputs.py"), stdin_data: JSON.dump(request))
