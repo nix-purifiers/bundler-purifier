@@ -59,6 +59,17 @@ for name in ["historical_greeting.gemspec", "lib", "exe"]:
     else:
         shutil.copyfile(source, project / name)
 (project / "Gemfile").write_text("# genuine pre-lockfile provider\n")
+outside = args.work / "outside-lock-parent"
+outside.mkdir()
+(outside / "sentinel").write_bytes(b"preserve outside bytes")
+(project / "linked-lock-parent").symlink_to(outside, target_is_directory=True)
+try:
+    run("reject-linked-lock-parent", [args.cli, "--lockfile", "linked-lock-parent/lock.json", "lock", "--input", "path:/missing-native-input-control#default"], project, success=False)
+    assert sorted(path.name for path in outside.iterdir()) == ["sentinel"]
+    assert (outside / "sentinel").read_bytes() == b"preserve outside bytes"
+    assert b"Nix input state is not an owned directory" in (logs / "reject-linked-lock-parent.stderr").read_bytes()
+finally:
+    (project / "linked-lock-parent").unlink()
 run("capture", [args.cli, "lock"], project)
 lock = project / "bundler-purifier.lock.json"
 original = lock.read_bytes()

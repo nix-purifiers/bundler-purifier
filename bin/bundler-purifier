@@ -331,11 +331,23 @@ module BundlerPurifier
     return if references.empty?
     # Input GC roots are owned working directories beside the explicitly
     # chosen lockfile. Validate before the resolver creates any output links.
-    [state_dir, File.join(state_dir, "inputs")].each do |directory|
-      if File.exist?(directory) || File.symlink?(directory)
-        fail!("Nix input state is not an owned directory") if File.symlink?(directory) || !File.directory?(directory)
+    project_root = File.realpath(root)
+    expanded_state = File.expand_path(state_dir)
+    # An explicit external lock has an explicitly chosen external anchor.
+    # Parents inside the project remain subject to project containment.
+    anchor = if expanded_state.start_with?(project_root + "/")
+      project_root
+    else
+      File.realpath(File.dirname(lockfile_path))
+    end
+    current = anchor
+    relative = expanded_state.delete_prefix(anchor + "/")
+    (relative.split("/") + ["inputs"]).each do |part|
+      current = File.join(current, part)
+      if File.exist?(current) || File.symlink?(current)
+        fail!("Nix input state is not an owned directory") if File.symlink?(current) || !File.directory?(current)
       else
-        Dir.mkdir(directory, 0700)
+        Dir.mkdir(current, 0700)
       end
     end
     request = { "references" => references, "previous" => previous, "refresh" => refresh,
