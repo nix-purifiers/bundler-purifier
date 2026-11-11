@@ -19,6 +19,8 @@
   lobsters,
   historicalRubySource,
   olderRubySource,
+  ruby2017Source,
+  ruby2018Source,
   ruby2022Source,
   ruby2025Source,
 }:
@@ -463,6 +465,43 @@ in
       nativeBuildInputs = [ ruby2025.stdenv.cc ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    rubies2017 = import ruby2017Source {
+      system = "x86_64-linux";
+      config = { };
+    };
+    rubies2018 = import ruby2018Source {
+      system = "x86_64-linux";
+      config = { };
+    };
+    native22 = import ./ruby18-sdk.nix {
+      inherit pkgs;
+      olderRubySource = ruby2017Source;
+      rubyPackage = rubies2017.ruby_2_2;
+      rubyVersion = "2.2.7";
+      runtimeName = "ruby227";
+    };
+    rubygems276Update = pkgs.fetchurl {
+      url = "https://rubygems.org/downloads/rubygems-update-2.7.6.gem";
+      hash = "sha256-7l7yGayX9UmcMeYHHq5CTDJlYg7OM7XMZuCfow8iCGo=";
+    };
+    project22 = build {
+      src = ./fixtures/ruby22;
+      ruby = native22.sdk;
+      nativeBuildInputs = [ native22.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    project23 = build {
+      src = ./fixtures/ruby23;
+      ruby = rubies2018.ruby_2_3;
+      nativeBuildInputs = [ rubies2018.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    project24 = build {
+      src = ./fixtures/ruby24;
+      ruby = rubies2018.ruby_2_4;
+      nativeBuildInputs = [ rubies2018.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     rubygems312Update = pkgs.fetchurl {
       url = "https://rubygems.org/downloads/rubygems-update-3.1.2.gem";
       hash = "sha256-e/5OXidBkeVtqNEnx53xDZEg/rhlDkutKSOPSydzpmE=";
@@ -593,6 +632,52 @@ in
         ''
           export HOME="$TMPDIR"
           python3 ${../.}/tests/historical-composition.py ${ruby2025.ruby_3_3} ${project33.release.projections.rubygems} ${project33.release.projections.rubygems.catalog} 3.3.8 2.5.22
+          touch "$out"
+        '';
+    rubygems276-update = rubygems276Update;
+    ruby22-sdk = native22.sdk;
+    ruby22-app = project22.packages.app;
+    ruby22-native-extension = project22.tests;
+    ruby22-repository = project22.release.projections.rubygems;
+    ruby22-cli = cli.override {
+      projectRuby = native22.sdk;
+      projectNativeBuildInputs = [ native22.compiler ];
+    };
+    ruby23-sdk = rubies2018.ruby_2_3;
+    ruby23-app = project23.packages.app;
+    ruby23-native-extension = project23.tests;
+    ruby23-repository = project23.release.projections.rubygems;
+    ruby23-cli = cli.override {
+      projectRuby = rubies2018.ruby_2_3;
+      projectNativeBuildInputs = [ rubies2018.stdenv.cc ];
+    };
+    ruby24-sdk = rubies2018.ruby_2_4;
+    ruby24-app = project24.packages.app;
+    ruby24-native-extension = project24.tests;
+    ruby24-repository = project24.release.projections.rubygems;
+    ruby24-cli = cli.override {
+      projectRuby = rubies2018.ruby_2_4;
+      projectNativeBuildInputs = [ rubies2018.stdenv.cc ];
+    };
+    ruby22-input-composition =
+      pkgs.runCommand "ruby22-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native22.sdk} ${project22.release.projections.rubygems} ${project22.release.projections.rubygems.catalog} 2.2.7 1.17.3
+          touch "$out"
+        '';
+    ruby23-input-composition =
+      pkgs.runCommand "ruby23-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${rubies2018.ruby_2_3} ${project23.release.projections.rubygems} ${project23.release.projections.rubygems.catalog} 2.3.6 1.16.1
+          touch "$out"
+        '';
+    ruby24-input-composition =
+      pkgs.runCommand "ruby24-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${rubies2018.ruby_2_4} ${project24.release.projections.rubygems} ${project24.release.projections.rubygems.catalog} 2.4.3 1.16.1
           touch "$out"
         '';
     rubygems312-update = rubygems312Update;
