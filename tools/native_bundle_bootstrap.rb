@@ -88,6 +88,48 @@ if !Bundler::Definition.respond_to?(:build) && ARGV.first == "install" && ARGV.d
   # This native CLI has no --local flag. Give its own resolver the local
   # source indexes, retaining native installation and conflict handling.
   require "bundler/installer"
+  class Bundler::Source::Git
+    # Nix supplies the exact locked tree under the later cache convention.
+    # Populate this SDK's own installation path from that verified tree.
+    def purifier_pinned_checkout
+      ref = options["ref"]
+      return nil unless ref && ref =~ /\A[0-9a-f]{40}([0-9a-f]{24})?\z/
+      directory = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
+      return nil unless directory
+      tree = Bundler.root.join(directory, "#{base_name}-#{ref[0, 12]}")
+      tree.join(".bundlecache").file? ? tree : nil
+    end
+
+    def purifier_materialize_checkout
+      tree = purifier_pinned_checkout
+      return false unless tree
+      unless @purifier_materialized_checkout
+        FileUtils.mkdir_p(path)
+        FileUtils.cp_r(tree.to_s + "/.", path.to_s, :remove_destination => true)
+        @purifier_materialized_checkout = true
+      end
+      true
+    end
+
+    alias_method :purifier_original_local_specs, :local_specs
+    def local_specs
+      purifier_materialize_checkout
+      purifier_original_local_specs
+    end
+    alias_method :purifier_original_checkout, :checkout
+    def checkout
+      purifier_original_checkout unless purifier_materialize_checkout
+    end
+    alias_method :purifier_original_cache, :cache
+    def cache
+      purifier_original_cache unless purifier_pinned_checkout
+    end
+    alias_method :purifier_original_revision, :revision
+    def revision
+      purifier_pinned_checkout ? options.fetch("ref") : purifier_original_revision
+    end
+    private :checkout, :cache, :revision, :purifier_materialize_checkout, :purifier_pinned_checkout
+  end
   class Bundler::Installer
     def remote_index
       @remote_index ||= Bundler::Index.build do |index|

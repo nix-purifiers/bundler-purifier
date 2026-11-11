@@ -419,6 +419,11 @@ module BundlerPurifier
       existing_marker = File.file?(gemfile_lock_path) && !File.read(gemfile_lock_path).lstrip.start_with?("---") && Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version&.to_s
       native_sdk = existing_marker ? { "version" => existing_marker, "lockCommand" => "lock" } : native_bundler_capabilities(env).merge("observed" => true)
       env["BUNDLER_PURIFIER_BUNDLER_VERSION"] = native_sdk.fetch("version") if native_sdk["observed"]
+      if native_sdk["format"] == "yaml"
+        # Native Git checkouts retain their bare cache as origin. Keep that
+        # owned cache available across separate capture invocations.
+        env["BUNDLE_CACHE_PATH"] = Pathname.new(File.join(state_dir, "native-capture-cache")).relative_path_from(Pathname.new(root)).to_s
+      end
 
       if !File.file?(gemfile_lock_path) || !@input_views.empty?
         puts "bundler-purifier: no Gemfile.lock; resolving with bundle lock"
@@ -436,6 +441,16 @@ module BundlerPurifier
         native_bundle!(env, "lock", persist_lock: true)
       end
       locked_bundler = yaml_lock ? nil : Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version
+      if yaml_lock
+        Dir.glob(File.join(File.expand_path(env.fetch("BUNDLE_CACHE_PATH"), root), "*.gem")).each do |archive|
+          if File.symlink?(archive)
+            bytes = File.binread(archive)
+            File.unlink(archive)
+            File.binwrite(archive, bytes)
+          end
+          File.chmod(File.stat(archive).mode | 0200, archive)
+        end
+      end
       if yaml_lock || native_sdk.fetch("lockCommand") == "install"
         native_bundle!(env, "cache", persist_lock: true)
       else
