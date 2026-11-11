@@ -64,6 +64,20 @@ with tempfile.TemporaryDirectory(prefix="native-environment-observer-") as tempo
     executable = next(project.glob("vendor/gems/ruby/1.8/gems/historical_greeting-*/exe/historical-greeting"))
     executable.chmod(executable.stat().st_mode & ~0o111)
     run("changed-installed-executable-mode", project, False)
+    project = temporary / "extra-installed-shadow-file"
+    shutil.copytree(relocated, project, symlinks=True)
+    package = next(project.glob("vendor/gems/ruby/1.8/gems/incoming_consumer-*"))
+    (package / "lib" / "openssl.rb").write_text('raise "extra installed shadow file executed"\n')
+    run("extra-installed-shadow-file", project, False)
+    project = temporary / "escaping-Gemfile"
+    shutil.copytree(relocated, project, symlinks=True)
+    gemfile_tripwire = temporary / "Gemfile-executed-outside"
+    outside_gemfile = temporary / "outside-Gemfile"
+    outside_gemfile.write_text('File.open(' + json.dumps(str(gemfile_tripwire)) + ', "w") {|f| f.write("executed")}\n')
+    (project / "Gemfile").unlink()
+    (project / "Gemfile").symlink_to(outside_gemfile)
+    run("escaping-Gemfile-before-evaluation", project, False)
+    assert not gemfile_tripwire.exists()
     # Reject an escaping gemspec before its first byte can be evaluated.
     project = temporary / "escaping-specification"
     shutil.copytree(relocated, project, symlinks=True)

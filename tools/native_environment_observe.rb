@@ -36,6 +36,9 @@ module PurifierEnvironmentObservation
   def self.observe(root)
     root = Pathname.new(root).realpath.to_s
     fail!("ambiguous Gemfile.lock for pre-lockfile SDK") if File.exist?(File.join(root, "Gemfile.lock"))
+    gemfile = File.join(root, "Gemfile")
+    within(root, gemfile)
+    fail!("native Gemfile is not a regular file") unless File.file?(gemfile)
     fail!("wrong native RubyGems") unless Gem::VERSION == "1.3.5"
     # Load only freshly regenerated native state. Do not load a codec or the
     # Bundler library before the SDK's selected environment has taken effect.
@@ -48,11 +51,14 @@ module PurifierEnvironmentObservation
       within(root, path)
       fail!("unsupported special file in native workspace") unless File.file?(path) || File.directory?(path)
     end
+    # Select the actual SDK library before generated state adjusts load paths.
+    # Bundler itself does not activate a metadata JSON codec.
+    gem "bundler", "= 0.8.1"
+    require "bundler"
+    fail!("wrong native Bundler interface") unless Bundler::VERSION == "0.8.1"
     require environment
     specs = Bundler.instance_variable_get(:@bundled_specs)
     fail!("SDK did not expose native selected specifications") unless specs.is_a?(Hash)
-    require "bundler"
-    fail!("wrong native Bundler interface") unless Bundler::VERSION == "0.8.1"
     Bundler.mode = :local
     manifest = Bundler::Bundle.load(File.join(root, "Gemfile"))
     fail!("unsupported native bundle layout") unless manifest.path.to_s == File.join(root, "vendor", "gems")
@@ -68,6 +74,7 @@ module PurifierEnvironmentObservation
     fail!("duplicate native root requirements") unless roots.map { |dependency| dependency["name"] }.uniq.size == roots.size
     names = specs.values.map { |spec| spec.name }
     fail!("duplicate native selected specifications") unless names.uniq.size == names.size
+    generated_payloads = []
     packages = specs.values.map do |spec|
       fail!("native selection is not a Gem::Specification") unless spec.is_a?(Gem::Specification)
       fail!("native selected name conflicts with SDK key") unless specs[spec.name].equal?(spec)
@@ -112,6 +119,23 @@ module PurifierEnvironmentObservation
         expected_mode = entry["mode"] | (executable ? 0111 : 0)
         fail!("native payload executable mode differs from SDK installation") unless (File.stat(physical).mode & 0111) == (expected_mode & 0111)
       end
+      expected_files = payload_names.keys
+      # Genuine Gem135 writes this one extra marker via RequirePathsBuilder.
+      # Its exact content comes from the native specification's public fields.
+      unless cached.require_paths == ["lib"] && (cached.bindir.nil? || cached.bindir == "bin")
+        marker = File.join(spec.full_gem_path, ".require_paths")
+        within(root, marker)
+        expected_marker = cached.require_paths.map { |path| path + "\n" }.join
+        expected_marker += cached.bindir + "\n" if cached.bindir
+        fail!("native generated require-path marker differs from SDK") unless File.open(marker, "rb") { |file| file.read } == expected_marker
+        expected_files << File.expand_path(marker)
+        generated_payloads << marker
+      end
+      installed_files = []
+      Find.find(spec.full_gem_path) do |path|
+        installed_files << File.expand_path(path) if File.file?(path)
+      end
+      fail!("native installed payload file set differs from archive") unless installed_files.sort == expected_files.sort
       spec.dependencies.each do |dependency|
         next unless dependency.type == :runtime
         selected = specs[dependency.name]
@@ -134,6 +158,7 @@ module PurifierEnvironmentObservation
     fail!("native selected closure contains an unrelated package") unless reachable.sort == names.sort
     generated = [environment, File.join(root, "vendor", "gems", Gem.ruby_engine, Gem::ConfigMap[:ruby_version], "environment.rb")]
     generated += specs.values.map { |spec| spec.loaded_from }
+    generated += generated_payloads
     {"packages" => packages.sort_by { |package| package["name"] },
      "generatedPaths" => generated.map { |path| within(root, path) }.sort,
      "rootRequirements" => roots.sort_by { |dependency| dependency["name"] }}
