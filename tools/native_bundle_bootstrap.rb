@@ -152,4 +152,6 @@ if !Bundler::Definition.respond_to?(:build) && ENV["BUNDLER_PURIFIER_INPUT_DATA"
   # alone cannot apply its declared Nix dependency bindings.
   require File.expand_path("rubygems_inputs", File.dirname(__FILE__))
 end
+require File.expand_path("native_cache_path", File.dirname(__FILE__))
+PurifierNativeCachePath.install
 load $0
