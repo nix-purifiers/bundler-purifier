@@ -914,6 +914,13 @@ in
       projectRuby = native184.sdk;
       projectNativeBuildInputs = [ native184.compiler ];
     };
+    ruby184-input-composition =
+      pkgs.runCommand "ruby184-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native184.sdk} ${project184.release.projections.rubygems} ${project184.release.projections.rubygems.catalog} 1.8.4 0.9.9 --versionless --rubygems-version 1.3.5 --no-ruby-dsl
+          touch "$out"
+        '';
     ruby186-sdk = native186.sdk;
     ruby186-app = project186.packages.app;
     ruby186-native-extension = project186.tests;
