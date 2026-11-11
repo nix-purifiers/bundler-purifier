@@ -23,6 +23,9 @@ parser.add_argument('--results', type=Path)
 parser.add_argument('--bundler-version', default='1.17.3')
 parser.add_argument('--bundler-hash', default='sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I=')
 parser.add_argument('--sdk-check', default='ruby18-sdk')
+parser.add_argument('--provider-check', default='ruby18-app')
+parser.add_argument('--ruby-version', default='1.8.7')
+parser.add_argument('--ruby-patchlevel', type=int, default=374)
 parser.add_argument('--versionless', action='store_true')
 parser.add_argument('--extra-gem-path', type=Path)
 parser.add_argument('--rubygems-version', default='2.6.14')
@@ -99,7 +102,7 @@ try:
     versions = run('native-versions', [args.sdk / 'bin/ruby', '-e',
         'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; puts [RUBY_VERSION,RUBY_PATCHLEVEL,Gem::VERSION,Bundler::VERSION,Gem.ruby,RbConfig::CONFIG.fetch("prefix")].join("|")'])
     version_fields = versions.strip().split('|')
-    assert version_fields[:4] == ['1.8.7', '374', args.rubygems_version, args.bundler_version], versions
+    assert version_fields[:4] == [args.ruby_version, str(args.ruby_patchlevel), args.rubygems_version, args.bundler_version], versions
     actual_ruby, actual_prefix = version_fields[4:]
     assert Path(actual_ruby).is_file()
     receipt['actualRubyExecutableSha256'] = hashlib.sha256(Path(actual_ruby).read_bytes()).hexdigest()
@@ -146,12 +149,12 @@ try:
         run('git-init', ['git', 'init', '-q', '-b', 'main'], git_repo)
         run('git-add', ['git', 'add', '.'], git_repo)
         run('git-commit', ['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], git_repo)
-    ruby_declaration = '' if args.no_ruby_dsl else 'ruby "1.8.7"\n'
+    ruby_declaration = '' if args.no_ruby_dsl else 'ruby ' + json.dumps(args.ruby_version) + '\n'
     manifest = f'source "{capture_host}"\n' + ruby_declaration + ('path "." do\n  gem "incoming_consumer", "= 1.0.0"\nend\n' if args.yaml_sdk else 'gemspec\n')
     if args.git_source:
         manifest += 'git ' + json.dumps(git_repo.as_uri()) + ', :branch => "main" do\n gem "git_leaf", "= 1.0.0"\nend\n'
     if args.no_ruby_dsl:
-        (project / '.ruby-version').write_text('1.8.7\n')
+        (project / '.ruby-version').write_text(args.ruby_version + '\n')
     gemspec = '''Gem::Specification.new do |s|
   s.name="incoming_consumer"; s.version="1.0.0"; s.authors=["fixture"]
   s.summary="Ruby 1.8 incoming Nix dependency proof"; s.license="MIT"
@@ -174,13 +177,15 @@ end
     if args.git_source:
         consumer = project / 'lib/incoming_consumer.rb'
         consumer.write_text(consumer.read_text().replace('    HistoricalGreeting.answer', '    require "git_leaf"\n    abort unless GitLeaf.answer == 17\n    HistoricalGreeting.answer'))
-    reference = f'path:{source}#checks.x86_64-linux.ruby18-app'
+    consumer_file = project / 'lib/incoming_consumer.rb'
+    consumer_file.write_text(consumer_file.read_text().replace('RUBY_VERSION == "1.8.7"', 'RUBY_VERSION == ' + json.dumps(args.ruby_version)).replace('RUBY_PATCHLEVEL == 374', 'RUBY_PATCHLEVEL == ' + str(args.ruby_patchlevel)))
+    reference = f'path:{source}#checks.x86_64-linux.{args.provider_check}'
     command = args.cli / 'bin/bundler-purifier'
     run('capture-input', [command, 'lock', '--input', reference], project)
     native_lock = (project / 'Gemfile.lock').read_bytes()
     lock_bytes = (project / 'bundler-purifier.lock.json').read_bytes()
     captured = json.loads(lock_bytes)
-    assert captured['ruby'] == '1.8.7'
+    assert captured['ruby'] == args.ruby_version
     if args.versionless:
         assert b'BUNDLED WITH' not in native_lock
         assert captured['bundlerVersion'] == args.bundler_version
@@ -226,7 +231,7 @@ end
     receipt['captureRegistryStoppedBeforeOfflineExecution'] = True
     code = 'require "incoming_consumer"; require "bundler/version"; abort unless IncomingConsumer.answer==42; puts "INCOMING|#{RUBY_VERSION}|#{Gem::VERSION}|#{Bundler::VERSION}|42"'
     output = run('wrapper-runtime', [args.cli / 'bin/bundle', 'exec', 'ruby', '-Ilib', '-e', code], project)
-    assert output == f'INCOMING|1.8.7|{args.rubygems_version}|{args.bundler_version}|42\n', output
+    assert output == f'INCOMING|{args.ruby_version}|{args.rubygems_version}|{args.bundler_version}|42\n', output
     expression = work / 'consumer.nix'
     expression.write_text('''let
   f = builtins.getFlake "path:''' + source + '''";
@@ -245,8 +250,17 @@ in build {
     repository = Path(run('pure-projection', ['nix-build', expression, '-A', 'release.projections.rubygems', '--no-out-link']).strip())
     output_info = json.loads(run('output-info', ['nix', 'path-info', '--json', tests, repository, args.cli, args.sdk, actual_prefix]))
     receipt['outputInfo'] = output_info
-    derivations = sorted({info['deriver'] for info in output_info.values()})
-    run('derivations', ['nix', 'derivation', 'show', *derivations])
+    # A cache's historical deriver may be absent; verify a currently valid
+    # derivation still produces the exact native interpreter output.
+    native_derivers = run('native-valid-derivers', ['nix-store', '--query', '--valid-derivers', actual_prefix]).splitlines()
+    assert native_derivers, 'native interpreter has no available derivation'
+    receipt['nativeInterpreterDerivers'] = native_derivers
+    derivations = sorted({info['deriver'] for path, info in output_info.items() if path != actual_prefix} | set(native_derivers))
+    derivation_data = json.loads(run('derivations', ['nix', 'derivation', 'show', *derivations]))
+    rows = derivation_data.get('derivations', derivation_data)
+    assert any(row['system'] == 'x86_64-linux' and any(
+        output.get('path') in (actual_prefix, actual_prefix.removeprefix('/nix/store/'))
+        for output in row['outputs'].values()) for row in rows.values()), 'derivation must produce the actual interpreter'
     if args.versionless and not args.yaml_sdk:
         if args.extra_gem_path:
             higher_env = dict(env)
@@ -353,7 +367,7 @@ in build {
         index_directory.mkdir()
         index_output = run('native-publication-index', [args.sdk / 'bin/ruby', ROOT / 'tests/rubygems-registry-index.rb',
             index_directory, update, repository])
-        assert index_output == f'NATIVE_INDEX|1.8.7|{args.rubygems_version}|{4 + int(args.git_source)}\n', index_output
+        assert index_output == f'NATIVE_INDEX|{args.ruby_version}|{args.rubygems_version}|{4 + int(args.git_source)}\n', index_output
         indexes.update({str(path.relative_to(index_directory)): path.read_bytes()
                        for path in index_directory.rglob('*') if path.is_file()})
         receipt['publicationSdkArchiveSha256'] = hashlib.sha256(update_bytes).hexdigest()
@@ -407,7 +421,7 @@ in build {
         publish = [command, 'publish', '--host', host, *proxy_flags]
         run('publish-projected', publish, project, publication)
         assert stored == archives
-        assert publication_agents and all(agent.startswith('RubyGems/' + args.rubygems_version) for agent in publication_agents), publication_agents
+        assert publication_agents and all(agent.removeprefix('Ruby, ').startswith('RubyGems/' + args.rubygems_version + ' ') for agent in publication_agents), publication_agents
         receipt['publicationNativeUserAgents'] = publication_agents
         count = len(uploads)
         run('publish-dedup', publish, project, publication)
@@ -433,7 +447,7 @@ abort "not installed ordinary gem" unless native.start_with?(ENV.fetch("GEM_HOME
 puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
 '''
         ordinary_output = run('ordinary-runtime', [args.sdk / 'bin/ruby', '-e', ordinary_code], ordinary, ordinary_env)
-        assert f'ORDINARY|1.8.7|374|{args.rubygems_version}|42' in ordinary_output.splitlines()
+        assert f'ORDINARY|{args.ruby_version}|{args.ruby_patchlevel}|{args.rubygems_version}|42' in ordinary_output.splitlines()
         observed = [line.split('|')[1:] for line in ordinary_output.splitlines() if line.startswith('NATIVE|')]
         assert len(observed) == 1
         native_path, native_hash = observed[0]
@@ -464,4 +478,4 @@ finally:
         capture_server.shutdown()
         capture_server.server_close()
     save()
-print('PASS Ruby1.8 incoming CLI composition, pure build, projected publication and ordinary consumer', flush=True)
+print(f'PASS Ruby{args.ruby_version} incoming CLI composition, pure build, projected publication and ordinary consumer', flush=True)

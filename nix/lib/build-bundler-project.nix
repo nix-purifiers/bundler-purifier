@@ -657,10 +657,12 @@ let
                 ''
             }
       '';
+  # Ruby 1.9's stdlib JSON rejects scalar serialization used by metadata
+  # helpers. Keep those helpers separate from the genuine native consumer.
   indexRuby' =
     if indexRuby != null then
       indexRuby
-    else if lib.versionOlder lock.ruby "1.9" then
+    else if lib.versionOlder lock.ruby "2.0" then
       if ruby_3_4 != null then
         ruby_3_4
       else
@@ -677,7 +679,7 @@ let
       ruby =
         if projectionRuby != null then
           projectionRuby
-        else if lib.versionOlder lock.ruby "1.9" then
+        else if lib.versionOlder lock.ruby "2.0" then
           indexRuby'
         else
           ruby';

@@ -383,6 +383,22 @@ in
       bundlerVersion = "0.9.26";
       bundlerHash = "sha256-z6SzCdAFdRtD3P7HtWmCn6o44bXjMnR6d+uX/3wca0E=";
     };
+    native19 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubyPackage =
+        (import olderRubySource {
+          system = "x86_64-linux";
+          config = { };
+        }).ruby_1_9;
+      rubyVersion = "1.9.3";
+      runtimeName = "ruby193";
+    };
+    project19 = build {
+      src = ./fixtures/ruby19;
+      ruby = native19.sdk;
+      nativeBuildInputs = [ native19.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project = build {
       src = ./fixtures/ruby18;
       ruby = native.sdk;
@@ -392,6 +408,22 @@ in
   in
   {
     ruby18-sdk = native.sdk;
+    ruby19-sdk = native19.sdk;
+    ruby19-native-extension = project19.tests;
+    ruby19-app = project19.packages.app;
+    ruby19-repository = project19.release.projections.rubygems;
+    ruby19-input-composition =
+      pkgs.runCommand "ruby193-bundler117-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native19.sdk} ${project19.release.projections.rubygems} ${project19.release.projections.rubygems.catalog} 1.9.3
+          ${native19.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../tools/rubygems_inputs.rb}
+          touch $out
+        '';
+    ruby19-cli = cli.override {
+      projectRuby = native19.sdk;
+      projectNativeBuildInputs = [ native19.compiler ];
+    };
     ruby18-rubygems-update = native.rubygemsUpdate;
     ruby18-bundler10-sdk = native10.sdk;
     ruby18-bundler09-sdk = native09.sdk;
