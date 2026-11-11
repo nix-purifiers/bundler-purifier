@@ -36,7 +36,22 @@ if roots.empty?
 end
 roots -= ["bundler"]
 File.open(File.join(output, "roots.json"), "wb") { |file| file.write(JSON.dump(roots.sort) + "\n") }
-specs = Hash[Bundler.load.specs.to_a.map { |spec| [spec.name, spec] }]
+legacy_environment = !Bundler::Definition.respond_to?(:build)
+native_sources = {}
+runtime_specs = if !legacy_environment
+  Bundler.load.specs
+else
+  # Native setup can load the generated environment without evaluating the
+  # facade. Apply declared input bindings to archive dependency metadata.
+  if ENV["BUNDLER_PURIFIER_INPUT_DATA"] && !defined?(PurifierGemInputs)
+    require File.expand_path("rubygems_inputs", File.dirname(__FILE__))
+  end
+  Bundler.definition.actual_dependencies.each { |dependency| native_sources[dependency.name] = dependency.source }
+  Bundler.load
+  raise "bundler-purifier: native environment missing; run native install and lock" unless defined?(Bundler::SPECS)
+  Bundler::SPECS
+end
+specs = Hash[runtime_specs.to_a.map { |spec| [spec.name, spec] }]
 selected = {}
 visit = lambda do |name|
   return if selected.key?(name) || name == "bundler" || !specs.key?(name)
@@ -56,10 +71,25 @@ selected.values.each do |original|
     next
   end
   Dir.mktmpdir("bundler-capture-") do |directory|
-    source = original.full_gem_path
-    local = original.source.is_a?(Bundler::Source::Path)
+    origin = original.source || native_sources[original.name]
+    local = origin.is_a?(Bundler::Source::Path)
+    source = legacy_environment && local ? origin.path.to_s : original.full_gem_path
     files = local ? owned.fetch(original.name, original.files) : original.files
-    runtime_paths = (original.require_paths + [original.bindir]).reject do |path|
+    # The 0.9 generated environment expands require_paths in native specs.
+    # Recover paths inside this actual gem; retain the archive boundary.
+    relative_paths = lambda do |paths|
+      paths.map do |path|
+        if path == source
+          "."
+        elsif path.start_with?(source + "/")
+          path.sub(/\A#{Regexp.escape(source + "/")}/, "")
+        else
+          path
+        end
+      end
+    end
+    require_paths = relative_paths.call(original.require_paths)
+    runtime_paths = (require_paths + relative_paths.call([original.bindir])).reject do |path|
       path.start_with?("/") || path == "." || path.split("/").include?("..")
     end
     files += Dir.chdir(source) do
@@ -112,7 +142,7 @@ selected.values.each do |original|
     end
     spec = original.dup
     spec.extensions = []
-    spec.require_paths = original.require_paths.reject { |path| path.start_with?("/") }
+    spec.require_paths = require_paths.reject { |path| path.start_with?("/") }
     spec.require_paths = ["lib"] if spec.require_paths.empty?
     if native
       spec.platform = Gem::Platform.local

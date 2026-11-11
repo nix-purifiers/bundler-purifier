@@ -117,10 +117,23 @@ let
   gemfileLockProblems =
     lib.optional (!hasGemfileLock)
       "bundler-purifier: the project has no Gemfile.lock. Run `bundler-purifier lock` in the project root.";
-  gemfileLockData = import ./gemfile-lock.nix {
+  nativeText = if hasGemfileLock then builtins.readFile gemfileLockPath else "";
+  nativeYaml = builtins.match "[[:space:]]*---.*" nativeText != null;
+  nativeSnapshot = import ./native-lock.nix {
     inherit lib;
-    text = if hasGemfileLock then builtins.readFile gemfileLockPath else "";
+    text = nativeText;
+    snapshot = purifierLock.bundlerNativeLock or null;
+    bundlerVersion = purifierLock.bundlerVersion or null;
+    ruby = purifierLock.ruby or null;
   };
+  gemfileLockData =
+    if nativeYaml then
+      nativeSnapshot.parsed
+    else
+      import ./gemfile-lock.nix {
+        inherit lib;
+        text = nativeText;
+      };
 
   # A path source is outside the project when its path climbs out of the
   # project root or is absolute.
@@ -356,6 +369,7 @@ let
   problems =
     lockProblems
     ++ gemfileLockProblems
+    ++ lib.optionals nativeYaml nativeSnapshot.problems
     ++ bundlerProblems
     ++ externalProblems
     ++ staleProblems
@@ -402,6 +416,7 @@ in
 
   bundlerLock = {
     ruby = purifierLock.ruby or null;
+    nativeFormat = if nativeYaml then "bundler-yaml" else "bundler-text";
     inherit bundler gems;
     externalPaths = externalPathList;
   };

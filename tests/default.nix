@@ -376,6 +376,13 @@ in
       bundlerVersion = "1.0.22";
       bundlerHash = "sha256-wOcoWqMSJAdHs6Ox3ll4agSVCkJA7GyWudDv3VjU7EM=";
     };
+    native09 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubygemsVersion = "1.8.30";
+      rubygemsHash = "sha256-6fXjBSxduNG/d8KmUEftW9mXe3PA7ZCMQGYQIQWRhUw=";
+      bundlerVersion = "0.9.26";
+      bundlerHash = "sha256-z6SzCdAFdRtD3P7HtWmCn6o44bXjMnR6d+uX/3wca0E=";
+    };
     project = build {
       src = ./fixtures/ruby18;
       ruby = native.sdk;
@@ -387,6 +394,11 @@ in
     ruby18-sdk = native.sdk;
     ruby18-rubygems-update = native.rubygemsUpdate;
     ruby18-bundler10-sdk = native10.sdk;
+    ruby18-bundler09-sdk = native09.sdk;
+    ruby18-bundler09-cli = cli.override {
+      projectRuby = native09.sdk;
+      projectNativeBuildInputs = [ native09.compiler ];
+    };
     ruby18-bundler10-rubygems-update = native10.rubygemsUpdate;
     ruby18-bundler10-cli = cli.override {
       projectRuby = native10.sdk;
@@ -435,6 +447,27 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native10.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog} 1.8.7 1.0.22 ${native.gems}/gems --versionless --rubygems-version 1.8.30 --no-ruby-dsl
+          touch $out
+        '';
+    ruby18-bundler09-native-yaml-composition =
+      pkgs.runCommand "ruby187-bundler09-native-yaml-composition"
+        { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/ruby18-yaml-composition.py ${native09.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog} --extra-gem-path ${native.gems}/gems --codec ${purifier.rubygemsCodecCompatibility}
+          touch $out
+        '';
+    ruby18-bundler09-native-yaml-sources =
+      pkgs.runCommand "ruby187-bundler09-native-yaml-sources"
+        {
+          nativeBuildInputs = [
+            pkgs.python3
+            pkgs.gitMinimal
+          ];
+        }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/ruby18-yaml-sources.py ${native09.sdk} ${project.release.projections.rubygems} ${project.release.projections.rubygems.catalog}
           touch $out
         '';
     ruby18-bundler136-input-composition =

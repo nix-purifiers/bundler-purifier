@@ -27,6 +27,7 @@ parser.add_argument('--versionless', action='store_true')
 parser.add_argument('--extra-gem-path', type=Path)
 parser.add_argument('--rubygems-version', default='2.6.14')
 parser.add_argument('--no-ruby-dsl', action='store_true')
+parser.add_argument('--yaml-sdk', action='store_true')
 parser.add_argument('--rubygems-update-archive', type=Path)
 args = parser.parse_args()
 work = args.results.resolve() if args.results else Path(tempfile.mkdtemp(prefix='ruby18-incoming-'))
@@ -135,7 +136,7 @@ try:
     threading.Thread(target=capture_server.serve_forever, daemon=True).start()
     capture_host = f'http://127.0.0.1:{capture_server.server_port}'
     ruby_declaration = '' if args.no_ruby_dsl else 'ruby "1.8.7"\n'
-    manifest = f'source "{capture_host}"\n' + ruby_declaration + 'gemspec\n'
+    manifest = f'source "{capture_host}"\n' + ruby_declaration + ('path "." do\n  gem "incoming_consumer", "= 1.0.0"\nend\n' if args.yaml_sdk else 'gemspec\n')
     if args.no_ruby_dsl:
         (project / '.ruby-version').write_text('1.8.7\n')
     gemspec = '''Gem::Specification.new do |s|
@@ -174,14 +175,31 @@ end
     run('no-op-capture', [command, 'lock'], project)
     assert (project / 'bundler-purifier.lock.json').read_bytes() == lock_bytes
     run('relock', [command, 'lock', '--force'], project)
-    assert (project / 'bundler-purifier.lock.json').read_bytes() == lock_bytes
+    if args.yaml_sdk:
+        # Ruby 1.8 YAML emits hash entries in native iteration order.
+        # Preserve and bind those real bytes; require the same SDK graph.
+        refreshed = json.loads((project / 'bundler-purifier.lock.json').read_bytes())
+        old_snapshot = captured['bundlerNativeLock']
+        new_snapshot = refreshed['bundlerNativeLock']
+        assert old_snapshot['observed'] == new_snapshot['observed']
+        assert old_snapshot['parsed'] == new_snapshot['parsed']
+        assert new_snapshot['nativeHash'] == 'sha256-' + base64.b64encode(hashlib.sha256((project / 'Gemfile.lock').read_bytes()).digest()).decode()
+        omitted = {'definitionHash', 'contentHash', 'bundlerNativeLock'}
+        assert {k: v for k, v in captured.items() if k not in omitted} == {k: v for k, v in refreshed.items() if k not in omitted}
+        receipt['nativeRelockContract'] = 'unchanged selected graph and SDK; exact fresh native YAML hash, no upstream byte-order claim'
+    else:
+        assert (project / 'bundler-purifier.lock.json').read_bytes() == lock_bytes
+    if args.yaml_sdk:
+        captured = json.loads((project / 'bundler-purifier.lock.json').read_bytes())
+        lock_bytes = (project / 'bundler-purifier.lock.json').read_bytes()
+        native_lock = (project / 'Gemfile.lock').read_bytes()
     run('prefetch', [command, 'prefetch'], project)
     capture_server.shutdown()
     capture_server.server_close()
     capture_server = None
     receipt['captureRegistryRequests'] = capture_requests
     receipt['captureRegistryStoppedBeforeOfflineExecution'] = True
-    code = 'require "incoming_consumer"; abort unless IncomingConsumer.answer==42; puts "INCOMING|#{RUBY_VERSION}|#{Gem::VERSION}|#{Bundler::VERSION}|42"'
+    code = 'require "incoming_consumer"; require "bundler/version"; abort unless IncomingConsumer.answer==42; puts "INCOMING|#{RUBY_VERSION}|#{Gem::VERSION}|#{Bundler::VERSION}|42"'
     output = run('wrapper-runtime', [args.cli / 'bin/bundle', 'exec', 'ruby', '-Ilib', '-e', code], project)
     assert output == f'INCOMING|1.8.7|{args.rubygems_version}|{args.bundler_version}|42\n', output
     expression = work / 'consumer.nix'
@@ -204,7 +222,7 @@ in build {
     receipt['outputInfo'] = output_info
     derivations = sorted({info['deriver'] for info in output_info.values()})
     run('derivations', ['nix', 'derivation', 'show', *derivations])
-    if args.versionless:
+    if args.versionless and not args.yaml_sdk:
         if args.extra_gem_path:
             higher_env = dict(env)
             higher_env.pop('BUNDLER_PURIFIER_BUNDLER_VERSION', None)
@@ -258,6 +276,32 @@ in build {
             (project / 'Gemfile.lock').write_bytes(native_lock)
             (project / 'bundler-purifier.lock.json').write_bytes(lock_bytes)
         receipt['versionlessIdentityNegatives'] = ['missing-fallback', 'wrong-metadata', 'marker-conflict']
+
+    if args.yaml_sdk:
+        import copy
+        for label in ('missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes'):
+            variant = copy.deepcopy(captured)
+            if label == 'missing-snapshot':
+                variant.pop('bundlerNativeLock')
+            elif label == 'wrong-hash':
+                variant['bundlerNativeLock']['nativeHash'] = 'sha256-invalid'
+            elif label == 'wrong-sdk':
+                variant['bundlerNativeLock']['observed']['bundler'] = '0.9.25'
+            else:
+                (project / 'Gemfile.lock').write_bytes(native_lock + b'\n')
+            variant.pop('contentHash')
+            canonical = json.dumps(variant, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+            variant['contentHash'] = 'sha256-' + base64.b64encode(hashlib.sha256(canonical).digest()).decode()
+            try:
+                (project / 'bundler-purifier.lock.json').write_text(json.dumps(variant) + '\n')
+                failure = run('reject-' + label, [command, 'prefetch'], project, success=False)
+                assert 'native' in failure and 'recapture' in failure.lower(), failure
+                failure = run('pure-reject-' + label, ['nix-build', expression, '-A', 'tests', '--no-out-link'], success=False)
+                assert 'native YAML snapshot' in failure and 'Recapture' in failure, failure
+            finally:
+                (project / 'Gemfile.lock').write_bytes(native_lock)
+                (project / 'bundler-purifier.lock.json').write_bytes(lock_bytes)
+        receipt['nativeYamlNegatives'] = ['missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes']
 
     archives = {path.name: path.read_bytes() for path in (repository / 'gems').glob('*.gem')}
     assert len(archives) == 3

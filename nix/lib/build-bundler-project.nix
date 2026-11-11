@@ -333,6 +333,7 @@ let
 
   # The environment shared by every build. Bundler's own configuration
   # goes to .bundle/config in the build directory, which `app` keeps.
+  nativeYaml = (lock.nativeFormat or null) == "bundler-yaml";
   setupBundler = ''
     export HOME="$TMPDIR/home"
     export GEM_HOME="$TMPDIR/gems"
@@ -344,7 +345,7 @@ let
     # sandbox cannot resolve, so `bundle` runs it through Ruby. The later
     # phases run in the same shell and keep the function.
     ${
-      if selectedInputs == [ ] then
+      if selectedInputs == [ ] && !nativeYaml then
         ''
           bundle() { ruby "$GEM_HOME/bin/bundle" "$@"; }
         ''
@@ -366,7 +367,7 @@ let
     rm -rf vendor/cache
     # Bundler copies what it installs from the cache and leaves marker
     # files in it, so the cache is a writable tree of links into the store.
-    cp -r --no-preserve=mode ${gemCache} vendor/cache
+    cp -r${lib.optionalString nativeYaml "L"} --no-preserve=mode ${gemCache} vendor/cache
     # Bundler loads the gemspec of a git source from its cached checkout,
     # and many of those gemspecs call `git ls-files`. Each checkout becomes
     # a repository of its files, submodule contents included.
@@ -379,17 +380,34 @@ let
     # Bundler version of BUNDLED WITH and Bundler has nothing to fetch.
     native_gem_install --install-dir "$GEM_HOME" --bindir "$GEM_HOME/bin" \
       vendor/cache/bundler-${lock.bundler}.gem
-    bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local cache_path vendor/cache
-    ${lib.optionalString (selectedInputs != [ ]) ''
-      BUNDLER_PURIFIER_PERSIST_LOCK=1 BUNDLE_FROZEN=false BUNDLE_DEPLOYMENT=false \
-        bundle lock --local >&2
-    ''}
-    bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local deployment true
-    bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local frozen true
-    bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local path vendor/bundle
-    ${lib.optionalString (without != [ ]) ''
-      bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local without ${lib.escapeShellArg (lib.concatStringsSep ":" without)}
-    ''}
+    ${
+      if nativeYaml then
+        ''
+          # Use this SDK's settings writer; this CLI predates `bundle config`.
+          ruby -rrubygems -rrubygems/user_interaction -e ${lib.escapeShellArg ''
+            gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION")
+            require "bundler"
+            Bundler.settings[:cache_path] = "vendor/cache"
+            Bundler.settings[:path] = "vendor/bundle"
+            Bundler.settings[:without] = ${builtins.toJSON (lib.concatStringsSep ":" without)}
+          ''}
+        ''
+      else
+        ''
+          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local cache_path vendor/cache
+          ${lib.optionalString (selectedInputs != [ ]) ''
+            BUNDLER_PURIFIER_PERSIST_LOCK=1 BUNDLE_FROZEN=false BUNDLE_DEPLOYMENT=false \
+              bundle lock --local >&2
+          ''}
+          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local deployment true
+          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local frozen true
+          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local path vendor/bundle
+          ${lib.optionalString (without != [ ]) ''
+            bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local without ${lib.escapeShellArg (lib.concatStringsSep ":" without)}
+          ''}
+        ''
+    }
+
   '';
 
   # Many gemspecs list their files with `git ls-files`. The source of a
@@ -515,6 +533,13 @@ let
               cp -r . "$out"
             ''
         }
+        ${lib.optionalString nativeYaml ''
+          # This SDK's generated environment contains absolute install paths.
+          # Relocate that cache alongside the installed bundle, keeping its
+          # native lock, fingerprint and selected specifications intact.
+          substituteInPlace "$out/${projectDir}/.bundle/environment.rb" \
+            --replace-fail "$PWD" "$out/${projectDir}"
+        ''}
         runHook postInstall
       '';
       passthru = {
@@ -541,7 +566,13 @@ let
     export PATH=${ruby'}/bin:"$PATH":${gitMinimal}/bin
     export LD_LIBRARY_PATH=${runtimeLibraryPath}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
     ${
-      if selectedInputs == [ ] then
+      if nativeYaml then
+        ''
+          export BUNDLER_PURIFIER_INPUT_VIEWS=${inputEnvironment}
+          export BUNDLER_PURIFIER_PERSISTENT_GEMFILE="$BUNDLE_GEMFILE"
+          exec ruby ${integrationTools}/native_bundle_command.rb "$@"
+        ''
+      else if selectedInputs == [ ] then
         ''
           exec ruby "$GEM_HOME/bin/bundle" "$@"
         ''

@@ -51,6 +51,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: cachix/install-nix-action@v31
       - run: python3 tests/composition-native.py
 
@@ -79,10 +81,15 @@ jobs:
         if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
         run: |
-          for epoch in 10 110 116 136; do
+          for epoch in 09 10 110 116 136; do
             update=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-rubygems-update)
             extra=(--rubygems-update-archive "$update")
             case "$epoch" in
+              09)
+                version=0.9.26; hash='sha256-z6SzCdAFdRtD3P7HtWmCn6o44bXjMnR6d+uX/3wca0E='
+                update=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-bundler10-rubygems-update)
+                extra=(--versionless --rubygems-version 1.8.30 --no-ruby-dsl --yaml-sdk --rubygems-update-archive "$update")
+                ;;
               10)
                 version=1.0.22; hash='sha256-wOcoWqMSJAdHs6Ox3ll4agSVCkJA7GyWudDv3VjU7EM='
                 higher=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-bundler117-gems)
