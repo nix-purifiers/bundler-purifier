@@ -24,6 +24,18 @@ components = [
   raise "native component was not activated" unless spec.is_a?(Gem::Specification)
   components << {"name" => name, "version" => spec.version.to_s, "library" => real.call(spec.full_gem_path)}
 end
+if ARGV[0]
+  descriptor = JSON.parse(File.open(ARGV[0], "rb") { |file| file.read })
+  descriptor["components"].each do |entry|
+    next if ["ruby", "rubygems", "bundler", "json"].include?(entry["name"])
+    directory = File.dirname(File.dirname(entry["library"]))
+    index = Gem::SourceIndex.from_gems_in(File.join(directory, "specifications"))
+    matches = index.find_name(entry["name"], "= " + entry["version"])
+    raise "native supplemental SDK component missing or ambiguous" unless matches.size == 1
+    spec = matches.first
+    components << {"name" => spec.name, "version" => spec.version.to_s, "library" => real.call(spec.full_gem_path)}
+  end
+end
 json_root = components.detect { |component| component["name"] == "json" }["library"]
 parser_paths = File.readlines("/proc/self/maps").map { |line| line.split.last }.uniq.select { |path| path && path =~ /json\/ext\/parser.so$/ }
 raise "native SDK C JSON origin differs from activated component" unless !parser_paths.empty? && parser_paths.all? { |path| real.call(path).index(json_root + "/") == 0 }

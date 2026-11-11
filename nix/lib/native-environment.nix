@@ -123,6 +123,9 @@ let
       "dependencies"
       "archiveHash"
       "installedPath"
+      "specificationPath"
+      "requirePaths"
+      "bindir"
       "sourceKind"
     ] item
     && lib.all (key: scalar item.${key}) [
@@ -132,6 +135,10 @@ let
     ]
     && digest item.archiveHash
     && relative item.installedPath
+    && relative item.specificationPath
+    && list item.requirePaths
+    && lib.all (path: path == "." || relative path) item.requirePaths
+    && (item.bindir == null || item.bindir == "." || relative item.bindir)
     && item.sourceKind == "verified-cache"
     && list item.dependencies
     && lib.all dependency item.dependencies
@@ -142,6 +149,19 @@ let
       ]) item.dependencies
     );
   root = item: exact [ "name" "requirements" ] item && scalar item.name && clauses item.requirements;
+  binding =
+    item:
+    exact [ "name" "version" ] item
+    && builtins.isString item.name
+    && builtins.match "[A-Za-z0-9_.-]+" item.name != null
+    && !(lib.elem item.name [
+      "."
+      ".."
+    ])
+    && builtins.stringLength item.name <= 512
+    && builtins.isString item.version
+    && builtins.match "[0-9A-Za-z_.-]+" item.version != null
+    && builtins.stringLength item.version <= 4096;
   evidence = value.manifests ++ value.snapshots;
   aggregate =
     list value.manifests
@@ -165,6 +185,30 @@ let
       in
       map (dep: { key = dep.name; }) (lib.filter (dep: dep.type == "runtime") selected.dependencies);
   };
+  prefix = "vendor/gems/ruby/${value.sdk.abi}/";
+  packageRole =
+    item:
+    let
+      suffix = lib.removePrefix (prefix + "gems/") item.installedPath;
+    in
+    lib.hasPrefix (prefix + "gems/") item.installedPath
+    && !(lib.hasInfix "/" suffix)
+    && item.specificationPath == prefix + "specifications/" + suffix + ".gemspec";
+  requiredSnapshots = [
+    "vendor/gems/environment.rb"
+    (prefix + "environment.rb")
+  ]
+  ++ lib.concatMap (
+    item:
+    [ item.specificationPath ]
+    ++ lib.optional (
+      item.requirePaths != [ "lib" ]
+      || !(lib.elem item.bindir [
+        null
+        "bin"
+      ])
+    ) (item.installedPath + "/.require_paths")
+  ) value.packages;
   valid =
     exact [
       "format"
@@ -177,6 +221,8 @@ let
       "snapshots"
       "packages"
       "rootRequirements"
+      "bindingAlgorithm"
+      "bindings"
     ] value
     && aggregate
     && builtins.stringLength (builtins.toJSON value) <= 16777216
@@ -186,6 +232,14 @@ let
     && value.interface == "environment-v08"
     && value.nativeLockFile == null
     && value.contexts == [ "default" ]
+    && value.bindingAlgorithm == "declared-runtime-requirements-v1"
+    && list value.bindings
+    && lib.all binding value.bindings
+    && unique (map (item: item.name) value.bindings)
+    &&
+      lib.foldl' (
+        sum: item: sum + builtins.stringLength item.name + builtins.stringLength item.version + 2
+      ) 0 value.bindings <= 1048576
     && sdk value.sdk
     &&
       lib.all
@@ -204,6 +258,10 @@ let
     && list value.packages
     && lib.all package value.packages
     && unique (map (entry: entry.name) value.packages)
+    && lib.all (
+      item:
+      lib.all (selected: selected.name != item.name || selected.version == item.version) value.packages
+    ) value.bindings
     && list value.rootRequirements
     && lib.all root value.rootRequirements
     && unique (map (entry: entry.name) value.rootRequirements)
@@ -216,7 +274,12 @@ let
         dep: dep.type != "runtime" || lib.any (selected: selected.name == dep.name) value.packages
       ) entry.dependencies
     ) value.packages
-    && builtins.length reachable == builtins.length value.packages;
+    && builtins.length reachable == builtins.length value.packages
+    && relative (lib.removeSuffix "/" prefix)
+    && lib.all packageRole value.packages
+    &&
+      lib.sort builtins.lessThan requiredSnapshots
+      == lib.sort builtins.lessThan (map (item: item.path) value.snapshots);
 in
 {
   inherit valid;

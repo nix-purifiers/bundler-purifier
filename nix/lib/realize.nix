@@ -39,18 +39,22 @@ let
       };
   # The path sources outside the project are on disk beside it, at the
   # paths Gemfile.lock gives them.
-  externalPaths = builtins.listToAttrs (
-    map
-      (p: {
-        name = p;
-        value = /. + "${root}/${p}";
-      })
-      (readLock {
-        inherit src;
-        lockFile = lockFile';
-        gemfileLock = gemfileLock';
-      }).bundlerLock.externalPaths
-  );
+  externalPaths =
+    if ((builtins.fromJSON (builtins.readFile lockFile')).version or null) == 4 then
+      { }
+    else
+      builtins.listToAttrs (
+        map
+          (p: {
+            name = p;
+            value = /. + "${root}/${p}";
+          })
+          (readLock {
+            inherit src;
+            lockFile = lockFile';
+            gemfileLock = gemfileLock';
+          }).bundlerLock.externalPaths
+      );
 in
 buildBundlerProject (
   projectRuby

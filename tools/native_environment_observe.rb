@@ -30,7 +30,8 @@ module PurifierEnvironmentObservation
 
   def self.identity(spec)
     {"name" => spec.name, "version" => spec.version.to_s,
-     "platform" => spec.platform.to_s, "dependencies" => dependencies(spec)}
+     "platform" => spec.platform.to_s, "dependencies" => dependencies(spec),
+     "requirePaths" => spec.require_paths.dup, "bindir" => spec.bindir}
   end
 
   def self.observe(root)
@@ -146,6 +147,7 @@ module PurifierEnvironmentObservation
         fail!("native requirement does not match selected dependency") unless dependency.version_requirements.satisfied_by?(selected.version)
       end
       identity(spec).merge("installedPath" => installed,
+        "specificationPath" => within(root, spec.loaded_from),
         "sourceKind" => "verified-cache",
         "archiveHash" => "sha256-" + [Digest::SHA256.digest(File.open(archive, "rb") { |file| file.read })].pack("m").delete("\n"))
     end

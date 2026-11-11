@@ -31,6 +31,7 @@ components = [dict(name=name, version=version, archiveHash=digest(b"synthetic ar
               for name, version in [("ruby", "1.8.4"), ("rubygems", "1.3.5"),
                                     ("bundler", "0.8.1"), ("json", "1.8.6")]]
 valid = dict(format="bundler-native-environment", schemaVersion=1, interface="environment-v08",
+             bindingAlgorithm="declared-runtime-requirements-v1", bindings=[],
              nativeLockFile=None, contexts=["default"],
              sdk=dict(ruby="1.8.4", patchlevel=None, abi="1.8", platform="x86_64-linux",
                       interpreter=digest(b"synthetic interpreter"), components=components,
@@ -39,10 +40,14 @@ valid = dict(format="bundler-native-environment", schemaVersion=1, interface="en
                       clientReport=dict(name="Bundler::VERSION", value="0.8.1"),
                       rubygemsReport=dict(name="Gem::VERSION", value="1.3.5")),
              manifests=[snapshot("Gemfile", b'gem "leaf"\n')],
-             snapshots=[snapshot("vendor/gems/environment.rb", b"# SDK text\n")],
+             snapshots=[snapshot("vendor/gems/environment.rb", b"# SDK picker\n"),
+                        snapshot("vendor/gems/ruby/1.8/environment.rb", b"# SDK environment\n"),
+                        snapshot("vendor/gems/ruby/1.8/specifications/leaf-1.0.0.gemspec", b"# SDK specification\n")],
              packages=[dict(name="leaf", version="1.0.0", platform="ruby", dependencies=[],
                             archiveHash=digest(b"synthetic package"),
                             installedPath="vendor/gems/ruby/1.8/gems/leaf-1.0.0",
+                            specificationPath="vendor/gems/ruby/1.8/specifications/leaf-1.0.0.gemspec",
+                            requirePaths=["lib"], bindir="bin",
                             sourceKind="verified-cache")],
              rootRequirements=[dict(name="leaf", requirements=[">= 0"])])
 cases = [("valid", valid, True)]
@@ -86,6 +91,16 @@ changed("missing-runtime", lambda v: v["packages"][0].update(dependencies=[dict(
 changed("duplicate-root", lambda v: v["rootRequirements"].append(v["rootRequirements"][0]))
 changed("extra-unrelated-package", lambda v: v["packages"].append(dict(v["packages"][0], name="unrelated")))
 changed("aggregate-overflow", lambda v: v.update(snapshots=[snapshot(f"file-{i}.rb", b"#" * 1048576) for i in range(7)]))
+changed("missing-native-environment", lambda v: v.update(snapshots=[s for s in v["snapshots"] if s["path"] != "vendor/gems/ruby/1.8/environment.rb"]))
+changed("missing-native-specification", lambda v: v.update(snapshots=v["snapshots"][:-1]))
+changed("unexpected-native-snapshot", lambda v: v["snapshots"].append(snapshot("extra.rb", b"# extra\n")))
+changed("wrong-specification-role", lambda v: v["packages"][0].update(specificationPath="other/leaf.gemspec"))
+changed("escaping-native-load-path", lambda v: v["packages"][0].update(requirePaths=["../outside"]))
+changed("escaping-native-bin-path", lambda v: v["packages"][0].update(bindir="../outside"))
+changed("unknown-binding-algorithm", lambda v: v.update(bindingAlgorithm="unknown"))
+changed("duplicate-binding", lambda v: v.update(bindings=[dict(name="leaf", version="1.0.0")] * 2))
+changed("wrong-selected-binding", lambda v: v.update(bindings=[dict(name="leaf", version="99.0.0")]))
+changed("malformed-binding-data", lambda v: v.update(bindings=[dict(name="leaf\nother", version="1.0.0")]))
 
 host = '''require ARGV.shift
 begin
@@ -124,7 +139,7 @@ end
         ("interpreter", lambda v: v["sdk"].update(interpreter=digest(b"competitor")), False),
         ("archive", lambda v: v["packages"][0].update(archiveHash=digest(b"competitor")), False),
         ("manifest", lambda v: v.update(manifests=[snapshot("Gemfile", b'gem "competitor"\n')]), False),
-        ("regenerated-snapshot", lambda v: v.update(snapshots=[snapshot("vendor/gems/environment.rb", b"# current root\n")]), True),
+        ("regenerated-snapshot", lambda v: v["snapshots"].__setitem__(0, snapshot("vendor/gems/environment.rb", b"# current root\n")), True),
         ("component-order", lambda v: v["sdk"]["components"].reverse(), True),
     ]:
         candidate = copy.deepcopy(valid)

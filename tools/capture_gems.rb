@@ -56,16 +56,38 @@ owned = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).inject({}) 
   result
 end
 roots = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_PROJECT_ROOTS", "[]"))
+native_prelock = !defined?(Bundler::Definition) && defined?(Bundler::Bundle) && Bundler::Bundle.respond_to?(:load)
 if roots.empty?
-  roots = Bundler.definition.dependencies.reject do |dependency|
-    dependency.groups.all? { |group| [:development, :test, :doc].include?(group) }
-  end.map { |dependency| dependency.name }
+  roots = if native_prelock
+    owned.keys
+  else
+    Bundler.definition.dependencies.reject do |dependency|
+      dependency.groups.all? { |group| [:development, :test, :doc].include?(group) }
+    end.map { |dependency| dependency.name }
+  end
 end
 roots -= ["bundler"]
 File.open(File.join(output, "roots.json"), "wb") { |file| file.write(JSON.dump(roots.sort) + "\n") }
-legacy_environment = !Bundler::Definition.respond_to?(:build)
+legacy_environment = !native_prelock && !Bundler::Definition.respond_to?(:build)
 native_sources = {}
-runtime_specs = if !legacy_environment
+prelock_own_sources = {}
+runtime_specs = if native_prelock
+  environment = File.join(Dir.pwd, "vendor", "gems", "environment.rb")
+  raise "bundler-purifier: native pre-lockfile environment missing" unless File.file?(environment)
+  require environment
+  selected = Bundler.instance_variable_get(:@bundled_specs)
+  raise "bundler-purifier: native pre-lockfile specifications missing" unless selected.is_a?(Hash)
+  own_specs = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).map do |archive|
+    require "rubygems/format"
+    spec = Gem::Format.from_file_by_path(archive).spec
+    directories = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_PROJECT_DIRECTORIES", "{}"))
+    prelock_own_sources[spec.name] = File.expand_path(directories.fetch(spec.name, "."), Dir.pwd)
+    spec
+  end
+  # Root gemspecs are a separate domain in this SDK. Its immutable JSON codec
+  # is an identity-bound runtime component even for an empty native bundle.
+  Gem.loaded_specs.values + selected.values + own_specs
+elsif !legacy_environment
   Bundler.load.specs
 else
   # Native setup can load the generated environment without evaluating the
@@ -100,7 +122,7 @@ archives = []
 intrinsics = []
 selected.values.each do |original|
   next if original.name == "bundler" || provided.include?([original.name, original.version.to_s])
-  if (original.full_gem_path.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0)
+  if !prelock_own_sources.key?(original.name) && (original.full_gem_path.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0)
     intrinsics << { "name" => original.name, "version" => original.version.to_s,
                     "sdk" => PurifierRubyConfig.values.fetch("prefix"), "ruby" => RUBY_VERSION,
                     "system" => Gem::Platform.local.to_s,
@@ -109,8 +131,12 @@ selected.values.each do |original|
   end
   with_capture_directory do |directory|
     origin = original.source || native_sources[original.name]
-    local = origin.is_a?(Bundler::Source::Path)
-    source = legacy_environment && local ? origin.path.to_s : original.full_gem_path
+    local = native_prelock ? prelock_own_sources.key?(original.name) : origin.is_a?(Bundler::Source::Path)
+    source = if native_prelock && local
+      prelock_own_sources.fetch(original.name)
+    else
+      legacy_environment && local ? origin.path.to_s : original.full_gem_path
+    end
     files = local ? owned.fetch(original.name, original.files) : original.files
     # The 0.9 generated environment expands require_paths in native specs.
     # Recover paths inside this actual gem; retain the archive boundary.

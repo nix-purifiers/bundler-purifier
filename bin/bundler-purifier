@@ -912,6 +912,22 @@ module BundlerPurifier
     end
     @input_references = references unless references.empty?
     command = argv.shift
+    if %w[lock update prefetch shell publish].include?(command)
+      prelock = begin
+        File.file?(lockfile_path) && JSON.parse(File.binread(lockfile_path, 16 * 1024 * 1024 + 1))["version"] == 4
+      rescue JSON::ParserError
+        false
+      end
+      if !prelock && command == "lock"
+        resolve_project_inputs
+        selected = File.dirname(lock_ruby_bindir)
+        prelock = File.file?(File.join(selected, "share/bundler-purifier/sdk-components.json"))
+      end
+      if prelock
+        require File.join(tools_dir, "native_environment_frontend")
+        return PurifierNativeEnvironmentFrontend.new(self).run(command, argv)
+      end
+    end
     case command
     when "lock" then lock(force: argv.delete("--force") ? true : false)
     when "update" then update(argv)

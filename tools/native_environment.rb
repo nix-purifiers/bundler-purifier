@@ -72,6 +72,11 @@ module PurifierNativeEnvironment
     reject!("unsafe relative native path") if value.start_with?("/") || value.split("/", -1).any? { |part| part.empty? || part == "." || part == ".." } || value.include?("\\")
   end
 
+  def self.load_path!(value)
+    return if value == "."
+    path!(value)
+  end
+
   def self.list!(value, label)
     reject!("invalid #{label} collection") unless value.is_a?(Array) && value.size <= MAX_RECORDS
   end
@@ -139,11 +144,13 @@ module PurifierNativeEnvironment
   # This validates the new nativeResolution record only. Existing v3 readers
   # and writers retain their own contract and do not pass through this helper.
   def self.validate!(value)
-    exact!(value, %w[format schemaVersion interface nativeLockFile contexts sdk manifests snapshots packages rootRequirements], "native resolution")
+    exact!(value, %w[format schemaVersion interface nativeLockFile contexts sdk manifests snapshots packages rootRequirements bindingAlgorithm bindings], "native resolution")
     reject!("native environment document exceeds size limit") if JSON.generate(value).bytesize > MAX_DOCUMENT
     reject!("unsupported native environment format") unless value.fetch("format") == "bundler-native-environment" && value.fetch("schemaVersion").is_a?(Integer) && value.fetch("schemaVersion") == 1 && value.fetch("interface") == "environment-v08"
     reject!("pre-lockfile resolution cannot contain a native lockfile") unless value.fetch("nativeLockFile").nil?
     reject!("unsupported native contexts") unless value.fetch("contexts") == ["default"]
+    reject!("unsupported native binding algorithm") unless value.fetch("bindingAlgorithm") == "declared-runtime-requirements-v1"
+    bindings!(value.fetch("bindings"))
     sdk!(value.fetch("sdk"))
     evidence = %w[manifests snapshots].flat_map do |key|
       list!(value.fetch(key), key)
@@ -169,10 +176,14 @@ module PurifierNativeEnvironment
     packages = value.fetch("packages")
     list!(packages, "native package")
     packages.each do |package|
-      exact!(package, %w[name version platform dependencies archiveHash installedPath sourceKind], "native package")
+      exact!(package, %w[name version platform dependencies archiveHash installedPath specificationPath requirePaths bindir sourceKind], "native package")
       %w[name version platform].each { |key| scalar!(package.fetch(key), key) }
       digest!(package.fetch("archiveHash"))
       path!(package.fetch("installedPath"))
+      path!(package.fetch("specificationPath"))
+      list!(package.fetch("requirePaths"), "native load path")
+      package.fetch("requirePaths").each { |path| load_path!(path) }
+      load_path!(package.fetch("bindir")) unless package.fetch("bindir").nil?
       reject!("unsupported native source kind") unless package.fetch("sourceKind") == "verified-cache"
       dependencies = package.fetch("dependencies")
       list!(dependencies, "native dependency")
@@ -189,6 +200,10 @@ module PurifierNativeEnvironment
       unique!(dependencies.map { |dependency| [dependency.fetch("name"), dependency.fetch("type")] }, "native dependency")
     end
     unique!(packages.map { |package| package.fetch("name") }, "native selected package")
+    value.fetch("bindings").each do |binding|
+      selected = packages.find { |package| package.fetch("name") == binding.fetch("name") }
+      reject!("native binding differs from selected package") if selected && selected.fetch("version") != binding.fetch("version")
+    end
     roots = value.fetch("rootRequirements")
     list!(roots, "native root requirement")
     roots.each do |root|
@@ -220,7 +235,34 @@ module PurifierNativeEnvironment
       end
     end
     reject!("native selected closure contains an unrelated package") unless reachable.sort == packages.map { |package| package.fetch("name") }.sort
+    prefix = "vendor/gems/ruby/#{value.fetch('sdk').fetch('abi')}/"
+    path!(prefix.delete_suffix("/"))
+    required_snapshots = ["vendor/gems/environment.rb", prefix + "environment.rb"]
+    packages.each do |package|
+      installed_prefix = prefix + "gems/"
+      installed = package.fetch("installedPath")
+      reject!("native installed role conflicts with SDK layout") unless installed.start_with?(installed_prefix) && !installed.delete_prefix(installed_prefix).include?("/")
+      expected_specification = prefix + "specifications/" + installed.delete_prefix(installed_prefix) + ".gemspec"
+      reject!("native specification role conflicts with installed package") unless package.fetch("specificationPath") == expected_specification
+      required_snapshots << expected_specification
+      unless package.fetch("requirePaths") == ["lib"] && [nil, "bin"].include?(package.fetch("bindir"))
+        required_snapshots << installed + "/.require_paths"
+      end
+    end
+    reject!("native snapshot inventory is incomplete or unexpected") unless required_snapshots.sort == value.fetch("snapshots").map { |record| record.fetch("path") }.sort
     value
+  end
+
+  def self.bindings!(bindings)
+    list!(bindings, "declared native binding")
+    bindings.each do |binding|
+      exact!(binding, %w[name version], "declared native binding")
+      name, version = binding.values_at("name", "version")
+      reject!("invalid declared native binding name") unless name.is_a?(String) && name.match?(/\A[A-Za-z0-9_.-]+\z/) && name != "." && name != ".." && name.bytesize <= 512
+      reject!("invalid declared native binding version") unless version.is_a?(String) && version.match?(/\A[0-9A-Za-z_.-]+\z/) && version.bytesize <= 4096
+    end
+    unique!(bindings.map { |binding| binding.fetch("name") }, "declared native binding")
+    reject!("native binding data exceeds limit") if bindings.sum { |binding| binding.fetch("name").bytesize + binding.fetch("version").bytesize + 2 } > 1048576
   end
 
   # Compare semantic observations, retaining original order only where the
@@ -242,6 +284,7 @@ module PurifierNativeEnvironment
       result.fetch("packages").sort_by! { |package| package.fetch("name") }
       result.fetch("rootRequirements").each { |root| root.fetch("requirements").sort! }
       result.fetch("rootRequirements").sort_by! { |root| root.fetch("name") }
+      result.fetch("bindings").sort_by! { |binding| binding.fetch("name") }
       # Regenerated native code can contain the current workspace path. Keep
       # captured snapshots intact; compare their semantic observation instead.
       result.delete("snapshots")

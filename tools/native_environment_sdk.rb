@@ -3,9 +3,32 @@ require "json"
 require_relative "native_environment"
 
 module PurifierNativeEnvironmentSDK
+  def self.clean_environment(extra = {})
+    keys = ENV.keys.select { |key| key.start_with?("BUNDLE_", "BUNDLER_") }
+    keys += %w[RUBYOPT RUBYLIB GEM_HOME GEM_PATH RUBYGEMS_GEMDEPS]
+    keys.to_h { |key| [key, nil] }.merge(extra)
+  end
+
+  # The genuine script behind the pure SDK's gem wrapper. Explicit Ruby -r
+  # arguments load adapters even when development tool paths contain spaces.
+  def self.gem_script(sdk)
+    descriptor = JSON.parse(File.binread(File.join(sdk, "share/bundler-purifier/sdk-components.json"), 65537))
+    component = descriptor.fetch("components").find { |entry| entry.fetch("name") == "rubygems" }
+    path = File.join(File.realpath(component.fetch("library")), "bin/gem")
+    PurifierNativeEnvironment.reject!("native SDK gem script is missing") unless File.file?(path)
+    path
+  end
+
+  def self.normalized_identity(identity)
+    value = JSON.parse(JSON.generate(identity))
+    value.fetch("components").sort_by! { |component| component.fetch("name") }
+    value.fetch("closure").sort_by! { |entry| entry.fetch("path") }
+    PurifierNativeEnvironment.canonical(value)
+  end
+
   # Deadline covers direct-child exit AND output EOF. Own the process group so
   # an inherited pipe cannot keep a finished SDK probe alive indefinitely.
-  def self.run(*argv, env: {}, cwd: nil, deadline_seconds: 90, output_limit: 8 * 1024 * 1024)
+  def self.run(*argv, env: {}, cwd: nil, deadline_seconds: 90, output_limit: 8 * 1024 * 1024, stream_stderr: false)
     readers = []
     writers = []
     output = [String.new(encoding: Encoding::BINARY), String.new(encoding: Encoding::BINARY)]
@@ -28,7 +51,10 @@ module PurifierNativeEnvironmentSDK
       ready = IO.select(pending, nil, nil, [remaining, 0.05].min)&.first || []
       ready.each do |reader|
         begin
-          output[readers.index(reader)] << reader.read_nonblock(65536)
+          index = readers.index(reader)
+          bytes = reader.read_nonblock(65536)
+          output[index] << bytes
+          STDERR.write(bytes) if stream_stderr && index == 1
           raise PurifierNativeEnvironment::Invalid, "SDK command output exceeds bound" if output.sum(&:bytesize) > output_limit
         rescue EOFError
           pending.delete(reader)
@@ -68,10 +94,10 @@ module PurifierNativeEnvironmentSDK
     contract.reject!("unsupported SDK component descriptor") unless descriptor.fetch("schemaVersion").is_a?(Integer) && descriptor.fetch("schemaVersion") == 1
     components = descriptor.fetch("components")
     contract.list!(components, "SDK descriptor component")
-    contract.reject!("unsupported native SDK components") unless components.map { |entry| entry.fetch("name") }.sort == %w[bundler json ruby rubygems]
+    names = components.map { |entry| entry.fetch("name") }.sort
+    contract.reject!("unsupported native SDK components") unless [ %w[bundler json ruby rubygems], %w[bundler gemcutter json json_pure ruby rubygems] ].include?(names)
     probe = File.join(__dir__, "native_environment_sdk_probe.rb")
-    observation = JSON.parse(run(File.join(sdk, "bin/ruby"), probe,
-                                env: {"RUBYOPT" => nil, "RUBYLIB" => nil, "GEM_HOME" => nil, "GEM_PATH" => nil}))
+    observation = JSON.parse(run(File.join(sdk, "bin/ruby"), probe, descriptor_path, env: clean_environment))
     # Nix builders supply closureInfo's authoritative store-paths file. That
     # mode hashes every physical path without needing a daemon/store database.
     closure = if closure_paths
