@@ -502,6 +502,24 @@ in
       nativeBuildInputs = [ rubies2018.stdenv.cc ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    # Keep RubyGems and Bundler from the official preview together. Nixpkgs'
+    # stable RubyGems replacement lacks APIs used by the bundled beta.
+    native41 =
+      (pkgs.mkRuby {
+        version = pkgs.mkRubyVersion "4" "1" "0" "preview1";
+        hash = "sha256-+1MLuI6Q3jrpHBMQonrgkOa9mJuHJt5Q7xKokKhbiO8=";
+      }).override
+        {
+          rubygemsSupport = false;
+          yjitSupport = false;
+          jitSupport = false;
+          docSupport = false;
+        };
+    project41 = build {
+      src = ./fixtures/ruby41;
+      ruby = native41;
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     rubygems312Update = pkgs.fetchurl {
       url = "https://rubygems.org/downloads/rubygems-update-3.1.2.gem";
       hash = "sha256-e/5OXidBkeVtqNEnx53xDZEg/rhlDkutKSOPSydzpmE=";
@@ -678,6 +696,18 @@ in
         ''
           export HOME="$TMPDIR"
           python3 ${../.}/tests/historical-composition.py ${rubies2018.ruby_2_4} ${project24.release.projections.rubygems} ${project24.release.projections.rubygems.catalog} 2.4.3 1.16.1
+          touch "$out"
+        '';
+    ruby41-sdk = native41;
+    ruby41-app = project41.packages.app;
+    ruby41-native-extension = project41.tests;
+    ruby41-repository = project41.release.projections.rubygems;
+    ruby41-cli = cli.override { projectRuby = native41; };
+    ruby41-input-composition =
+      pkgs.runCommand "ruby41-preview-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native41} ${project41.release.projections.rubygems} ${project41.release.projections.rubygems.catalog} 4.1.0 4.1.0.beta2 --ruby-requirement 4.1.0.preview1
           touch "$out"
         '';
     rubygems312-update = rubygems312Update;

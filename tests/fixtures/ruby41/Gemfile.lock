@@ -1,0 +1,27 @@
+PATH
+  remote: .
+  specs:
+    historical_greeting (1.0.0)
+      json (= 2.18.0)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    json (2.18.0)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  historical_greeting!
+
+CHECKSUMS
+  historical_greeting (1.0.0)
+  json (2.18.0) sha256=b10506aee4183f5cf49e0efc48073d7b75843ce3782c68dbeb763351c08fd505
+
+RUBY VERSION
+  ruby 4.1.0.preview1
+
+BUNDLED WITH
+  4.1.0.beta2

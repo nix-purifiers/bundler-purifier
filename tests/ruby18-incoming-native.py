@@ -26,6 +26,7 @@ parser.add_argument('--bundler-hash', default='sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq
 parser.add_argument('--sdk-check', default='ruby18-sdk')
 parser.add_argument('--provider-check', default='ruby18-app')
 parser.add_argument('--ruby-version', default='1.8.7')
+parser.add_argument('--ruby-requirement')
 parser.add_argument('--ruby-patchlevel', type=int, default=374)
 parser.add_argument('--versionless', action='store_true')
 parser.add_argument('--extra-gem-path', type=Path)
@@ -150,7 +151,7 @@ try:
         run('git-init', ['git', 'init', '-q', '-b', 'main'], git_repo)
         run('git-add', ['git', 'add', '.'], git_repo)
         run('git-commit', ['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], git_repo)
-    ruby_declaration = '' if args.no_ruby_dsl else 'ruby ' + json.dumps(args.ruby_version) + '\n'
+    ruby_declaration = '' if args.no_ruby_dsl else 'ruby ' + json.dumps(args.ruby_requirement or args.ruby_version) + '\n'
     manifest = f'source "{capture_host}"\n' + ruby_declaration + ('path "." do\n  gem "incoming_consumer", "= 1.0.0"\nend\n' if args.yaml_sdk else 'gemspec\n')
     if args.git_source:
         manifest += 'git ' + json.dumps(git_repo.as_uri()) + ', :branch => "main" do\n gem "git_leaf", "= 1.0.0"\nend\n'
