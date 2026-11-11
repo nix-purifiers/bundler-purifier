@@ -250,6 +250,15 @@ in
         touch "$out"
       '';
 
+  native-environment-host-contract =
+    pkgs.runCommand "bundler-native-environment-host-contract" { nativeBuildInputs = [ pkgs.ruby ]; }
+      ''
+        export HOME="$TMPDIR"
+        ruby ${../.}/tests/native-environment-contract.rb
+        ruby ${../.}/tests/native-environment-sdk-command.rb
+        touch "$out"
+      '';
+
   # The app's bundle compiles msgpack, takes nokogiri precompiled for this
   # platform, rainbow from its git source, helper from a path inside the
   # project and shared from a path outside it, all without a network.
@@ -568,6 +577,7 @@ in
       sourceHash = "sha256-EY5vJK/OjooQ3O0jY1Fo5Y2myRIaIfEgyC9CXUCh4yE=";
       legacySSL = true;
     };
+    native184Prelock = import ./ruby184-bundler08-sdk.nix { inherit pkgs olderRubySource; };
     native184 = import ./ruby184-sdk.nix { inherit pkgs olderRubySource; };
     project184 = build {
       src = ./fixtures/ruby184;
@@ -911,6 +921,11 @@ in
           touch $out
         '';
     rubygems137-update = native186.rubygemsUpdate;
+    ruby184-bundler08-sdk = native184Prelock.sdk;
+    ruby184-bundler08-cli = cli.override {
+      projectRuby = native184Prelock.sdk;
+      projectNativeBuildInputs = [ native184Prelock.compiler ];
+    };
     ruby184-sdk = native184.sdk;
     rubygems135-update = native184.rubygemsUpdate;
     ruby184-publisher-gems = native184.publisherGems;

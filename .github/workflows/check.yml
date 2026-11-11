@@ -283,12 +283,22 @@ jobs:
             --sdk-check ruby41-sdk --provider-check ruby41-app \
             --results "$RUNNER_TEMP/ruby41-incoming-evidence"
 
+      - name: Pre-lockfile Bundler 0.8 native frontend and relocation
+        run: |
+          mapfile -t prelock < <(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby184-bundler08-sdk .#checks.x86_64-linux.ruby184-bundler08-cli)
+          python3 tests/prelock-native.py --sdk "${prelock[0]}" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-native-evidence"
+          python3 tests/prelock-relocation.py --project "$RUNNER_TEMP/bundler08-native-evidence/project" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-relocation-evidence"
+
       - name: Retain historical incoming composition receipts
         if: always() && runner.os == 'Linux' && runner.arch == 'X64'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ruby18-incoming-composition
           path: |
+            ${{ runner.temp }}/bundler08-*-evidence/receipt.json
+            ${{ runner.temp }}/bundler08-native-evidence/logs/*
+            ${{ runner.temp }}/bundler08-relocation-evidence/*.stdout
+            ${{ runner.temp }}/bundler08-relocation-evidence/*.stderr
             ${{ runner.temp }}/ruby18-incoming*-evidence/receipt.json
             ${{ runner.temp }}/ruby18-incoming*-evidence/logs/*
             ${{ runner.temp }}/ruby18-incoming*-evidence/consumer/Gemfile

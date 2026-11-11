@@ -185,7 +185,7 @@ class PurifierNativeEnvironmentFrontend
     C.reject!("native working state is missing; run bundler-purifier prefetch") unless File.file?(receipt_path)
     receipt = C.parse(File.binread(receipt_path, 65537))
     C.exact!(receipt, %w[version lockContentHash project sdkHash app appNar workingHash contentHash], "native replay receipt")
-    C.reject!("native replay receipt is stale; run bundler-purifier prefetch") unless receipt.fetch("version") == 1 &&
+    C.reject!("native replay receipt is stale; run bundler-purifier prefetch") unless receipt.fetch("version").is_a?(Integer) && receipt.fetch("version") == 1 &&
       receipt.fetch("contentHash") == C.content_hash(receipt) && receipt.fetch("project") == @root &&
       receipt.fetch("lockContentHash") == document.fetch("contentHash") &&
       receipt.fetch("sdkHash") == C.hash_bytes(JSON.generate(S.normalized_identity(@identity))) &&
