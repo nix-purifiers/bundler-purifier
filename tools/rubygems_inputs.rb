@@ -684,5 +684,5 @@ if PurifierGemInputs::LEGACY_YAML_LOCK
   index_patch = PurifierNativeIndex.installer_index_method(Bundler::Installer) == :remote_index ?
     PurifierGemInputs::DeferredOrdinaryIndex : PurifierGemInputs::EarlyDeferredOrdinaryIndex
   PurifierGemInputs.install_patch(Bundler::Installer, index_patch)
-  Bundler::Installer.send(:private, :remote_index)
+  Bundler::Installer.send(:private, PurifierNativeIndex.installer_index_method(Bundler::Installer))
 end
