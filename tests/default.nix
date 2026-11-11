@@ -528,6 +528,13 @@ in
       system = "x86_64-linux";
       config = { };
     };
+    native25 = import ./ruby25-sdk.nix { inherit pkgs historicalRubySource; };
+    project25 = build {
+      src = ./fixtures/ruby25;
+      ruby = native25.sdk;
+      nativeBuildInputs = [ native25.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project26 = build {
       src = ./fixtures/ruby26;
       ruby = historicalRubies.ruby_2_6;
@@ -750,6 +757,21 @@ in
           touch "$out"
         '';
     rubygems312-update = rubygems312Update;
+    ruby25-sdk = native25.sdk;
+    ruby25-native-extension = project25.tests;
+    ruby25-app = project25.packages.app;
+    ruby25-repository = project25.release.projections.rubygems;
+    ruby25-cli = cli.override {
+      projectRuby = native25.sdk;
+      projectNativeBuildInputs = [ native25.compiler ];
+    };
+    ruby25-input-composition =
+      pkgs.runCommand "ruby25-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native25.sdk} ${project25.release.projections.rubygems} ${project25.release.projections.rubygems.catalog} 2.5.8 2.0.2
+          touch $out
+        '';
     ruby26-sdk = historicalRubies.ruby_2_6;
     ruby26-native-extension = project26.tests;
     ruby26-app = project26.packages.app;
