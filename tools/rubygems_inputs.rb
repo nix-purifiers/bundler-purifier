@@ -206,7 +206,13 @@ module PurifierGemInputs
       @purifier_legacy_cached_specs ||= super.tap do |index|
         remotes.each do |remote|
           next unless remote.scheme == "file"
-          path = defined?(URI::DEFAULT_PARSER) ? URI::DEFAULT_PARSER.unescape(remote.path) : URI.unescape(remote.path)
+          path = if remote.respond_to?(:parser)
+            remote.parser.unescape(remote.path)
+          elsif defined?(URI::DEFAULT_PARSER)
+            URI::DEFAULT_PARSER.unescape(remote.path)
+          else
+            URI.unescape(remote.path)
+          end
           directory = File.join(path, "gems")
           cache_paths = respond_to?(:caches) ? caches : instance_variable_get(:@caches)
           cache_paths << Pathname.new(directory) unless cache_paths.include?(Pathname.new(directory))
