@@ -206,7 +206,7 @@ selected.values.each do |original|
         Gem::Requirement.new("= #{Gem.ruby_version}")
       else
         next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
-        requirement = Gem::Requirement.new(">= #{RUBY_VERSION}", "< #{next_release}")
+        requirement = Gem::Requirement.new([">= #{RUBY_VERSION}", "< #{next_release}"])
         if spec.respond_to?(:ruby_code, true)
           begin
             # The native installed-gemspec serializer in older RubyGems
