@@ -2,6 +2,59 @@
 # Loaded by a facade Gemfile before Bundler evaluates the user's Gemfile.
 require "bundler"
 module PurifierGemInputs
+  CLASS_METHODS_CAN_MOVE = begin
+    probe = Class.new { def purifier_probe; true; end }
+    Module.new.send(:define_method, :purifier_probe, probe.instance_method(:purifier_probe))
+    true
+  rescue TypeError
+    false
+  end
+  INSTANCE_PATCHES = {}
+  INSTANCE_FACTORIES = {}
+
+  def self.decorate_instance(object)
+    return object if object.frozen?
+    object.class.ancestors.reverse_each do |ancestor|
+      (INSTANCE_PATCHES[ancestor] || []).each { |patch| object.extend(patch) }
+    end
+    object
+  end
+
+  # Ruby 1.9 rejects transferring class UnboundMethods into modules.
+  # Extend genuine SDK instances at allocation/factory/copy boundaries.
+  def self.install_instance_patch(target, patch)
+    raise TypeError, "this SDK singleton needs a supported method-interception API" if target <= Class
+    patches = (INSTANCE_PATCHES[target] ||= [])
+    return if patches.include?(patch)
+    patches << patch
+    unless INSTANCE_FACTORIES[target]
+      INSTANCE_FACTORIES[target] = true
+      eigenclass = class << target; self; end
+      original_allocate = eigenclass.instance_method(:allocate)
+      [:new, :allocate, :from_yaml, :_load, :load].each do |factory|
+        next unless target.respond_to?(factory)
+        original = eigenclass.instance_method(factory)
+        if factory == :new && original.owner == Class
+          eigenclass.send(:define_method, factory) do |*arguments, &block|
+            object = PurifierGemInputs.decorate_instance(original_allocate.bind(self).call)
+            object.send(:initialize, *arguments, &block)
+            object
+          end
+        else
+          eigenclass.send(:define_method, factory) do |*arguments, &block|
+            PurifierGemInputs.decorate_instance(original.bind(self).call(*arguments, &block))
+          end
+        end
+      end
+      original_copy = target.instance_method(:initialize_copy)
+      target.send(:define_method, :initialize_copy) do |other|
+        original_copy.bind(self).call(other)
+        PurifierGemInputs.decorate_instance(self)
+      end
+      target.send(:private, :initialize_copy)
+    end
+    ObjectSpace.each_object(target) { |object| decorate_instance(object) }
+  end
   # Before Ruby 2, include cannot override methods defined by a class.
   # Move just the intercepted methods into an included predecessor so the
   # same patches retain their ordinary super chain on the old interpreter.
@@ -9,6 +62,8 @@ module PurifierGemInputs
     return if target.ancestors.include?(patch)
     if target.respond_to?(:prepend)
       target.send(:prepend, patch)
+    elsif target.is_a?(Class) && !CLASS_METHODS_CAN_MOVE
+      install_instance_patch(target, patch)
     else
       # Ruby 1.8 does not propagate later module includes to classes that
       # already included it (Bundler::MatchPlatform is one such module).
