@@ -28,7 +28,8 @@ module PurifierNativeLock
     reject!("native snapshot hash is stale or mismatched") unless snapshot["nativeHash"] == expected
     sdk = snapshot["observed"]
     reject!("native snapshot SDK identity is incomplete") unless sdk.is_a?(Hash) && sdk.keys.sort == %w[ruby patchlevel rubygems bundler platform].sort &&
-      %w[ruby rubygems bundler platform].all? { |key| scalar?(sdk[key]) } && sdk["patchlevel"].is_a?(Integer)
+      %w[ruby rubygems bundler platform].all? { |key| scalar?(sdk[key]) } &&
+      (sdk["ruby"] == "1.8.4" ? sdk["patchlevel"].nil? : sdk["patchlevel"].is_a?(Integer))
     reject!("native snapshot SDK identity conflicts with bundlerVersion") if bundler_version && sdk["bundler"] != bundler_version
     reject!("native snapshot SDK identity conflicts with ruby") if ruby_version && sdk["ruby"] != ruby_version
     parsed = snapshot["parsed"]

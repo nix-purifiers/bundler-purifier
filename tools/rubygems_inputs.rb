@@ -2,6 +2,8 @@
 # Loaded by a facade Gemfile before Bundler evaluates the user's Gemfile.
 require "bundler"
 require File.expand_path("repository_uri", File.dirname(__FILE__))
+require File.expand_path("ruby_config", File.dirname(__FILE__))
+require File.expand_path("native_index", File.dirname(__FILE__))
 module PurifierGemInputs
   CLASS_METHODS_CAN_MOVE = begin
     probe = Class.new { def purifier_probe; true; end }
@@ -170,6 +172,15 @@ module PurifierGemInputs
       package = PACKAGES[name]
       package ? Gem::Requirement.new("= #{package.fetch('version')}") : super
     end
+
+    # Early native dependency matching reads this accessor directly,
+    # including when Bundler aliases its newer requirement reader.
+    if Gem::Dependency.method_defined?(:version_requirements)
+      def version_requirements
+        package = PACKAGES[name]
+        package ? Gem::Requirement.new("= #{package.fetch('version')}") : super
+      end
+    end
   end
 
   module ProjectDependencies
@@ -177,12 +188,12 @@ module PurifierGemInputs
       values = super
       return values if name.nil? || name.include?("\0") || !values.any? { |dependency| PACKAGES.key?(dependency.name) }
       begin
-        return values if full_gem_path.index(RbConfig::CONFIG.fetch("prefix") + "/") == 0
+        return values if full_gem_path.to_s.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0
       rescue Gem::Exception
         # Early RubyGems has no installation path until the SDK assigns a
-        # source to this genuine specification. Keep its native array then.
+        # source to this genuine archive specification. It is not an
+        # installed SDK gem; its declared inputs still need binding.
         raise unless loaded_from.nil?
-        return values
       end
       mapped = values.map do |dependency|
         PACKAGES.key?(dependency.name) && !dependency.is_a?(Requirements) ? dependency.dup.extend(Requirements) : dependency
@@ -195,7 +206,7 @@ module PurifierGemInputs
 
   module IntrinsicSpecs
     def specs
-      @purifier_intrinsic_specs ||= Bundler::Index.build do |index|
+      @purifier_intrinsic_specs ||= PurifierNativeIndex.build do |index|
         Dir[File.join(Gem.default_dir, "specifications", "{,default/}*.gemspec")].each do |path|
           spec = Gem::Specification.load(path)
           next unless spec && (package = PACKAGES[spec.name]) && package["intrinsic"]
@@ -301,14 +312,19 @@ module PurifierGemInputs
     end
 
     def specs
-      @purifier_yaml_specs ||= Bundler::Index.build do |index|
+      @purifier_yaml_specs ||= PurifierNativeIndex.build do |index|
         remotes.each do |remote|
           next unless remote.scheme == "file"
           path = URI.unescape(remote.path)
           Dir[File.join(path, "gems", "*.gem")].sort.each do |archive|
             spec = Gem::Format.from_file_by_path(archive).spec
             next unless PACKAGES.key?(spec.name)
-            installed = Gem::Specification.find_all_by_name(spec.name, "= #{spec.version}").find do |candidate|
+            candidates = if Gem::Specification.respond_to?(:find_all_by_name)
+              Gem::Specification.find_all_by_name(spec.name, "= #{spec.version}")
+            else
+              Gem.source_index.find_name(spec.name, "= #{spec.version}")
+            end
+            installed = candidates.find do |candidate|
               candidate.platform.to_s == spec.platform.to_s && candidate.loaded_from &&
                 (candidate.full_gem_path.index(Gem.dir + "/") == 0) && File.file?(candidate.loaded_from)
             end
@@ -343,8 +359,8 @@ module PurifierGemInputs
     def to_definition(*arguments)
       intrinsics = PACKAGES.values.select { |package| package["intrinsic"] }
       intrinsics.each do |package|
-        unless package.fetch("sdk") == RbConfig::CONFIG.fetch("prefix")
-          raise "bundler-purifier: Nix input requires Ruby SDK #{package.fetch('sdk')}, current SDK is #{RbConfig::CONFIG.fetch('prefix')}"
+        unless package.fetch("sdk") == PurifierRubyConfig.values.fetch("prefix")
+          raise "bundler-purifier: Nix input requires Ruby SDK #{package.fetch('sdk')}, current SDK is #{PurifierRubyConfig.values.fetch('prefix')}"
         end
       end
       if intrinsics.any?
@@ -598,8 +614,33 @@ if PurifierGemInputs::LEGACY_SOURCE_ARRAY
     end
   end
   target = PurifierGemInputs::LEGACY_YAML_LOCK ? Bundler::Environment : Bundler::Definition
-  PurifierGemInputs.install_patch(target, PurifierGemInputs::InlineDefinitionSources)
-  target.send(:private, :resolve) if PurifierGemInputs::LEGACY_YAML_LOCK
+  if target.method_defined?(:resolve) || target.private_method_defined?(:resolve)
+    PurifierGemInputs.install_patch(target, PurifierGemInputs::InlineDefinitionSources)
+    target.send(:private, :resolve) if PurifierGemInputs::LEGACY_YAML_LOCK
+  else
+    module PurifierGemInputs::InlineInstallerSpecsSources
+      def specs(*arguments)
+        previous = Thread.current[:purifier_definition_sources]
+        Thread.current[:purifier_definition_sources] = sources
+        super(*arguments)
+      ensure
+        Thread.current[:purifier_definition_sources] = previous
+      end
+    end
+    module PurifierGemInputs::InlineRuntimeSpecsSources
+      def specs(*arguments)
+        previous = Thread.current[:purifier_definition_sources]
+        Thread.current[:purifier_definition_sources] = sources
+        super(*arguments)
+      ensure
+        Thread.current[:purifier_definition_sources] = previous
+      end
+    end
+    require "bundler/installer"
+    require "bundler/runtime"
+    PurifierGemInputs.install_patch(Bundler::Installer, PurifierGemInputs::InlineInstallerSpecsSources)
+    PurifierGemInputs.install_patch(Bundler::Runtime, PurifierGemInputs::InlineRuntimeSpecsSources)
+  end
   PurifierGemInputs.install_patch(class << Bundler::Resolver; self; end, PurifierGemInputs::InlineResolverSources)
 end
 
@@ -647,7 +688,14 @@ if PurifierGemInputs::LEGACY_YAML_LOCK
       @purifier_deferred_index ||= PurifierGemInputs::DeferredIndex.new { super }
     end
   end
+  module PurifierGemInputs::EarlyDeferredOrdinaryIndex
+    def index
+      @purifier_deferred_index ||= PurifierGemInputs::DeferredIndex.new { super }
+    end
+  end
   require "bundler/installer"
-  PurifierGemInputs.install_patch(Bundler::Installer, PurifierGemInputs::DeferredOrdinaryIndex)
-  Bundler::Installer.send(:private, :remote_index)
+  index_patch = PurifierNativeIndex.installer_index_method(Bundler::Installer) == :remote_index ?
+    PurifierGemInputs::DeferredOrdinaryIndex : PurifierGemInputs::EarlyDeferredOrdinaryIndex
+  PurifierGemInputs.install_patch(Bundler::Installer, index_patch)
+  Bundler::Installer.send(:private, PurifierNativeIndex.installer_index_method(Bundler::Installer))
 end

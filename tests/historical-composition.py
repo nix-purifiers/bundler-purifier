@@ -29,7 +29,7 @@ args = parser.parse_args()
 tools, repository, catalog = args.tools, args.repository, args.catalog
 expected_ruby, expected_bundler = args.expected_ruby, args.expected_bundler
 extra_gem_path, versionless = args.extra_gem_path, args.versionless
-patchlevel, default_gem_version = {'1.8.6': (420, '1.3.7'), '1.8.7': (374, '2.6.14'), '1.9.0': (0, '1.3.7'), '1.9.1': (431, '2.6.14'), '1.9.2': (330, '2.6.14'), '1.9.3': (547, '2.6.14'), '2.0.0': (481, '2.6.14'), '2.1.3': (242, '2.6.14'), '2.2.7': (470, '2.6.14'), '2.3.6': (384, '2.7.6'), '2.4.3': (205, '2.7.6'), '3.0.5': (211, '3.3.20'), '3.1.7': (261, '3.5.22'), '3.2.8': (263, '3.5.22'), '3.3.8': (144, '3.5.22'), '4.0.9': (0, '3.7.2'), '4.1.0': (-1, '4.1.0.beta2'), '2.6.6': (146, '3.1.2'), '2.7.1': (83, '3.1.2'), '2.5.8': (224, '3.1.2')}[expected_ruby]
+patchlevel, default_gem_version = {'1.8.4': ('absent', '1.3.5'), '1.8.5': (231, '1.3.5'), '1.8.6': (420, '1.3.7'), '1.8.7': (374, '2.6.14'), '1.9.0': (0, '1.3.7'), '1.9.1': (431, '2.6.14'), '1.9.2': (330, '2.6.14'), '1.9.3': (547, '2.6.14'), '2.0.0': (481, '2.6.14'), '2.1.3': (242, '2.6.14'), '2.2.7': (470, '2.6.14'), '2.3.6': (384, '2.7.6'), '2.4.3': (205, '2.7.6'), '3.0.5': (211, '3.3.20'), '3.1.7': (261, '3.5.22'), '3.2.8': (263, '3.5.22'), '3.3.8': (144, '3.5.22'), '4.0.9': (0, '3.7.2'), '4.1.0': (-1, '4.1.0.beta2'), '2.6.6': (146, '3.1.2'), '2.7.1': (83, '3.1.2'), '2.5.8': (224, '3.1.2')}[expected_ruby]
 gem_version = args.rubygems_version or default_gem_version
 with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     project = Path(temporary)
@@ -55,6 +55,10 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
         assert (project / 'Gemfile').read_text() == manifest
         return result.stdout if succeeds else result.stdout + result.stderr
 
+    if expected_bundler == '0.9.9':
+        # This native lock also writes an executable environment containing
+        # installed gem paths, so follow its install-before-lock lifecycle.
+        run('install', '--local')
     run('lock', '--local')
     lock = (project / 'Gemfile.lock').read_bytes()
     entries = json.loads(catalog.read_text())['packages']
@@ -76,7 +80,7 @@ requirement = Gem.loaded_specs.fetch("json").required_ruby_version
 abort "current Ruby ABI rejected" unless requirement.satisfied_by?(Gem.ruby_version)
 next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
 abort "next Ruby ABI accepted" if requirement.satisfied_by?(next_release)
-puts "RUNTIME|#{RUBY_VERSION}|#{RUBY_PATCHLEVEL}|#{Gem::VERSION}|#{Bundler::VERSION}"
+puts "RUNTIME|#{RUBY_VERSION}|#{defined?(RUBY_PATCHLEVEL) ? RUBY_PATCHLEVEL : "absent"}|#{Gem::VERSION}|#{Bundler::VERSION}"
 puts "VALUE|#{HistoricalGreeting.answer}"
 Gem.loaded_specs.values.each do |spec|
   if ["json", "historical_greeting"].include?(spec.name)
@@ -89,7 +93,7 @@ paths = File.readlines("/proc/self/maps").map { |line| line.split.last }.uniq.se
 abort "ambiguous loaded parser" unless paths.size == 1
 native = paths.first
 abort "wrong loaded gem" unless native.index(Gem.loaded_specs.fetch("json").full_gem_path + "/") == 0
-puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
+puts "NATIVE|#{native}|#{File.open(native, "rb") { |file| Digest::SHA256.hexdigest(file.read) }}"
 '''
     output = run('exec', 'ruby', '-e', runtime)
     lines = output.splitlines()
@@ -133,7 +137,7 @@ puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
             (project / 'Gemfile.lock').write_bytes(lock)
         print('PASS native archive checksum bindings and tampered checksum rejection')
 
-    if versionless:
+    if versionless and expected_bundler != '0.9.9':
         identity = r'''klass = Bundler::Source::Rubygems
 repository = PurifierGemInputs::PACKAGES.values.find { |package| !package["intrinsic"] }.fetch("repository")
 nix = klass.new("remotes" => [repository])
@@ -170,6 +174,8 @@ abort "ordinary constraint changed" unless spec.dependencies.last.requirement.to
 abort "SDK specification class changed" unless spec.class == Gem::Specification
 puts "NATIVE DEPENDENCY COLLECTION PASS"
 '''
+    if expected_bundler == '0.9.9':
+        collection = 'require ' + json.dumps(str(root / 'tools/rubygems_inputs.rb')) + '\n' + collection
     assert run('exec', 'ruby', '-e', collection).strip() == 'NATIVE DEPENDENCY COLLECTION PASS'
 
     run('lock', '--local')
@@ -179,7 +185,12 @@ puts "NATIVE DEPENDENCY COLLECTION PASS"
     # declared inputs the native resolver must fail and retain both files.
     failure = run('lock', '--local', views=[], succeeds=False)
     assert 'historical_greeting' in failure
-    assert (project / 'Gemfile.lock').read_bytes() == lock
+    if expected_bundler == '0.9.9':
+        # Native early lock removes the previous lock before re-resolution.
+        assert not (project / 'Gemfile.lock').exists()
+        (project / 'Gemfile.lock').write_bytes(lock)
+    else:
+        assert (project / 'Gemfile.lock').read_bytes() == lock
     conflicting = json.loads(catalog.read_text())
     conflicting['packages'][0]['integrity'] = 'sha512-conflicting-input'
     wrong = project / 'conflicting-catalog.json'

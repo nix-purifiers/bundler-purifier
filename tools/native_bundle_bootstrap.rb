@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: MIT
 # Activate the selected consumer SDK before loading its own executable.
+# Early CLI implementations snapshot ARGV while their file is required.
+# Remove the launcher's executable argument before loading native code.
+$0 = ARGV.shift
 require "rubygems"
 require "rubygems/user_interaction" unless defined?(Gem::SilentUI)
 gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0")
 require "bundler"
 require "bundler/cli"
 require "bundler/definition"
+require File.expand_path("native_index", File.dirname(__FILE__))
 
 # Early Path::Installer stores @spec directly, while newer RubyGems'
 # inherited accessor expects @package. Later Bundler supplies this reader.
@@ -44,13 +48,16 @@ if !Bundler.respond_to?(:app_cache) && Bundler.respond_to?(:cache)
     end
     private :config_file
   end
-  class Bundler::Runtime
-    alias_method :purifier_original_cache_path, :cache_path
-    def cache_path
-      directory = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
-      directory ? Pathname.new(directory) : purifier_original_cache_path
+  require "bundler/runtime"
+  if Bundler::Runtime.method_defined?(:cache_path) || Bundler::Runtime.private_method_defined?(:cache_path)
+    class Bundler::Runtime
+      alias_method :purifier_original_cache_path, :cache_path
+      def cache_path
+        directory = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
+        directory ? Pathname.new(directory) : purifier_original_cache_path
+      end
+      private :cache_path
     end
-    private :cache_path
   end
   # This RGProxy predates SilentUI's stream initialization. Keep its own
   # forwarding behavior and initialize the real native superclass state.
@@ -68,16 +75,17 @@ if !Bundler.respond_to?(:app_cache) && Bundler.respond_to?(:cache)
       path ? Pathname.new(path) : purifier_original_cache
     end
   end
-  class << Bundler::Index
-    alias_method :purifier_original_application_cached_gems, :application_cached_gems
-    def application_cached_gems
-      path = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
-      path ? from_cached_specs(path) : purifier_original_application_cached_gems
+  if Bundler::Index.respond_to?(:application_cached_gems)
+    class << Bundler::Index
+      alias_method :purifier_original_application_cached_gems, :application_cached_gems
+      def application_cached_gems
+        path = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
+        path ? from_cached_specs(path) : purifier_original_application_cached_gems
+      end
     end
   end
 end
 
-$0 = ARGV.shift
 # These SDKs write their native lock as part of install, before a separate
 # lock command existed. Keep resolution and lock serialization native.
 legacy_install_lock = Bundler::Definition.respond_to?(:build) && !defined?(Bundler::SourceList)
@@ -130,22 +138,15 @@ if !Bundler::Definition.respond_to?(:build) && ARGV.first == "install" && ARGV.d
     end
     private :checkout, :cache, :revision, :purifier_materialize_checkout, :purifier_pinned_checkout
   end
-  class Bundler::Installer
-    def remote_index
-      @remote_index ||= Bundler::Index.build do |index|
-        sources.each do |source|
-          if source.respond_to?(:local_specs)
-            index.use source.local_specs
-          elsif source.is_a?(Bundler::Source::Rubygems) && source.uri.scheme == "file"
-            index.use source.specs
-          end
-        end
-        index.use Bundler::Index.installed_gems
-        index.use Bundler::Index.cached_gems
-      end
+  index_method = PurifierNativeIndex.installer_index_method(Bundler::Installer)
+  # Both names denote the SDK's own default resolver index. Only the
+  # native command lacking --local receives this local source collection.
+  Bundler::Installer.class_eval <<-RUBY, __FILE__, __LINE__ + 1
+    def #{index_method}
+      @purifier_local_index ||= PurifierNativeIndex.local(sources)
     end
-    private :remote_index
-  end
+    private :#{index_method}
+  RUBY
 end
 if !Bundler::Definition.respond_to?(:build) && ENV["BUNDLER_PURIFIER_INPUT_DATA"]
   # A locked 0.9 Definition bypasses Gemfile evaluation, so the lent facade
@@ -154,4 +155,9 @@ if !Bundler::Definition.respond_to?(:build) && ENV["BUNDLER_PURIFIER_INPUT_DATA"
 end
 require File.expand_path("native_cache_path", File.dirname(__FILE__))
 PurifierNativeCachePath.install
+if ARGV.first == "exec" && ENV["BUNDLER_PURIFIER_INPUT_DATA"] &&
+    !Bundler::Definition.respond_to?(:build) && !Bundler.respond_to?(:env_file)
+  require File.expand_path("native_exec_inputs", File.dirname(__FILE__))
+  PurifierNativeExecInputs.install
+end
 load $0

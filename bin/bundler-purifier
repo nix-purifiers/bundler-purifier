@@ -348,12 +348,27 @@ module BundlerPurifier
   # The selected consumer SDK reports its own identity and command ABI.
   # The host Ruby running this CLI must never stand in for that SDK.
   def native_bundler_capabilities(env = {})
-    code = 'require "rubygems"; require "rubygems/user_interaction" unless defined?(Gem::SilentUI); gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; require "bundler/cli"; require "bundler/definition"; puts [Bundler::VERSION, Bundler::CLI.instance_methods.map { |name| name.to_s }.include?("lock") && (defined?(Bundler::SourceList) || !Bundler::Definition.respond_to?(:build)) ? "lock" : "install", Bundler::Definition.respond_to?(:build) ? "text" : "yaml"].join("|")'
+    code = <<~'RUBY'
+      require "rubygems"
+      require "rubygems/user_interaction" unless defined?(Gem::SilentUI)
+      gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0")
+      require "bundler"
+      require "bundler/cli"
+      require "bundler/definition"
+      require "bundler/runtime"
+      format = Bundler::Definition.respond_to?(:build) ? "text" : "yaml"
+      command = Bundler::CLI.instance_methods.map { |name| name.to_s }.include?("lock") &&
+        (defined?(Bundler::SourceList) || format == "yaml") ? "lock" : "install"
+      cache_path = format != "yaml" || Bundler.respond_to?(:app_cache) ||
+        Bundler::Runtime.method_defined?(:cache_path) || Bundler::Runtime.private_method_defined?(:cache_path)
+      puts [Bundler::VERSION, command, format, cache_path ? "configurable" : "vendor"].join("|")
+    RUBY
     out, status = Open3.capture2(env, File.join(lock_ruby_bindir, "ruby"), "-e", code)
     fail!("could not inspect the selected native Bundler SDK") unless status.success?
-    version, command, format = out.strip.split("|")
-    fail!("selected native Bundler returned an invalid identity") unless version && Gem::Version.correct?(version) && %w[lock install].include?(command)
-    { "version" => version, "lockCommand" => command, "format" => format }
+    version, command, format, cache_path = out.strip.split("|")
+    fail!("selected native Bundler returned an invalid identity") unless version && Gem::Version.correct?(version) &&
+      %w[lock install].include?(command) && %w[text yaml].include?(format) && %w[configurable vendor].include?(cache_path)
+    { "version" => version, "lockCommand" => command, "format" => format, "cachePath" => cache_path }
   end
 
   def lock_parser(text, lock = nil)
@@ -422,7 +437,11 @@ module BundlerPurifier
       if native_sdk["format"] == "yaml"
         # Native Git checkouts retain their bare cache as origin. Keep that
         # owned cache available across separate capture invocations.
-        env["BUNDLE_CACHE_PATH"] = Pathname.new(File.join(state_dir, "native-capture-cache")).relative_path_from(Pathname.new(root)).to_s
+        env["BUNDLE_CACHE_PATH"] = if native_sdk["cachePath"] == "vendor"
+          "vendor/cache"
+        else
+          Pathname.new(File.join(state_dir, "native-capture-cache")).relative_path_from(Pathname.new(root)).to_s
+        end
       end
 
       if !File.file?(gemfile_lock_path) || !@input_views.empty?
@@ -461,7 +480,7 @@ module BundlerPurifier
       cache = File.expand_path(env["BUNDLE_CACHE_PATH"], root)
       text = File.read(gemfile_lock_path)
       if yaml_lock
-        @native_lock_snapshot = JSON.parse(capture!(env, File.join(lock_ruby_bindir, "ruby"),
+        @native_lock_snapshot = JSON.parse(capture!(env.merge("BUNDLER_PURIFIER_INPUT_VIEWS" => JSON.dump(@input_views)), File.join(lock_ruby_bindir, "ruby"),
           File.join(tools_dir, "native_lock_snapshot.rb")))
       end
       parser = lock_parser(text)
@@ -702,7 +721,8 @@ module BundlerPurifier
     lock = read_lock!
     bundler_version = locked_bundler_version(lock)
     unless lock_parser(File.read(gemfile_lock_path), lock).bundler_version
-      actual = native_bundler_capabilities.fetch("version")
+      native_sdk = native_bundler_capabilities
+      actual = native_sdk.fetch("version")
       fail!("selected native Bundler SDK #{actual} conflicts with recorded bundlerVersion #{bundler_version}; use the intended native SDK") unless actual == bundler_version
     end
     FileUtils.mkdir_p(state_dir)
@@ -722,12 +742,18 @@ module BundlerPurifier
     config_command = Gem::Version.new(bundler_version) >= Gem::Version.new("2.1") ? %w[config set --local] : %w[config --local]
 
     yaml_sdk = lock.dig("bundlerNativeLock", "format") == "bundler-yaml"
-    cache = File.join(state_dir, "cache")
-    FileUtils.rm_rf(cache)
+    vendor_cache = yaml_sdk && native_sdk && native_sdk["cachePath"] == "vendor"
+    cache = vendor_cache ? File.join(root, "vendor/cache") : File.join(state_dir, "cache")
+    FileUtils.rm_rf(cache) unless vendor_cache
     FileUtils.mkdir_p(cache)
     Dir.children(built).each do |entry|
       source = File.join(built, entry)
       dest = File.join(cache, entry)
+      if vendor_cache && (File.exist?(dest) || File.symlink?(dest))
+        fail!("native vendor/cache conflicts with the locked cache entry #{entry}") unless
+          File.file?(source) && File.file?(dest) && FileUtils.compare_file(source, dest)
+        next
+      end
       if yaml_sdk && File.file?(source)
         FileUtils.copy_file(source, dest)
         FileUtils.chmod("u+w", dest)
@@ -822,6 +848,8 @@ module BundlerPurifier
         # Early RubyGems selects the same destination through its native
         # RUBYGEMS_HOST setting, before it gained the --host CLI option.
         push_environment["RUBYGEMS_HOST"] = host
+        # The genuine pre-builtin Gemcutter plugin uses this destination.
+        push_environment["GEMCUTTER_URL"] = host
         push_arguments = []
         skip_value = false
         args.each do |arg|

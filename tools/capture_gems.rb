@@ -1,11 +1,37 @@
 # SPDX-License-Identifier: MIT
 # Capture the target Bundler SDK's actual runtime graph after native builds.
 require "bundler"
+require File.expand_path("ruby_config", File.dirname(__FILE__))
 require "rubygems/package"
 require "json"
 require "fileutils"
 require "tmpdir"
 require "rbconfig"
+
+def with_capture_directory
+  if Dir.respond_to?(:mktmpdir)
+    Dir.mktmpdir("bundler-capture-") { |directory| yield directory }
+  else
+    # Ruby 1.8.4's tmpdir has no mktmpdir. Create the owned directory
+    # atomically and retry collisions without touching existing entries.
+    directory = nil
+    100.times do
+      candidate = File.join(Dir.tmpdir, "bundler-capture-#{Process.pid}-#{rand(0x7fffffff)}")
+      begin
+        Dir.mkdir(candidate, 0700)
+        directory = candidate
+        break
+      rescue Errno::EEXIST
+      end
+    end
+    raise "bundler-purifier: could not create capture directory" unless directory
+    begin
+      yield directory
+    ensure
+      FileUtils.rm_rf(directory)
+    end
+  end
+end
 
 def copy_runtime_file(input, target)
   FileUtils.mkdir_p(File.dirname(target))
@@ -48,7 +74,17 @@ else
     require File.expand_path("rubygems_inputs", File.dirname(__FILE__))
   end
   Bundler.definition.actual_dependencies.each { |dependency| native_sources[dependency.name] = dependency.source }
-  Bundler.load
+  runtime = Bundler.load
+  unless Bundler.respond_to?(:env_file)
+    raise "bundler-purifier: native runtime unavailable" unless runtime.is_a?(Bundler::Runtime) &&
+      runtime.respond_to?(:rb_lock_file, true) && runtime.respond_to?(:gemfile_fingerprint, true)
+    environment = runtime.send(:rb_lock_file)
+    raise "bundler-purifier: native environment missing; run native install and lock" unless environment.file?
+    fingerprint = runtime.send(:gemfile_fingerprint)
+    require environment.to_s
+    raise "bundler-purifier: native environment SDK mismatch" unless Bundler::LOCKED_BY == Bundler::VERSION
+    raise "bundler-purifier: native environment fingerprint stale" unless Bundler::FINGERPRINT == fingerprint
+  end
   raise "bundler-purifier: native environment missing; run native install and lock" unless defined?(Bundler::SPECS)
   Bundler::SPECS
 end
@@ -64,14 +100,14 @@ archives = []
 intrinsics = []
 selected.values.each do |original|
   next if original.name == "bundler" || provided.include?([original.name, original.version.to_s])
-  if (original.full_gem_path.index(RbConfig::CONFIG.fetch("prefix") + "/") == 0)
+  if (original.full_gem_path.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0)
     intrinsics << { "name" => original.name, "version" => original.version.to_s,
-                    "sdk" => RbConfig::CONFIG.fetch("prefix"), "ruby" => RUBY_VERSION,
+                    "sdk" => PurifierRubyConfig.values.fetch("prefix"), "ruby" => RUBY_VERSION,
                     "system" => Gem::Platform.local.to_s,
                     "dependencies" => original.runtime_dependencies.map { |dependency| { "name" => dependency.name, "requirement" => dependency.instance_variable_get(:@requirement).to_s } } }
     next
   end
-  Dir.mktmpdir("bundler-capture-") do |directory|
+  with_capture_directory do |directory|
     origin = original.source || native_sources[original.name]
     local = origin.is_a?(Bundler::Source::Path)
     source = legacy_environment && local ? origin.path.to_s : original.full_gem_path
@@ -108,7 +144,7 @@ selected.values.each do |original|
       # Default gems live in Ruby's stdlib/architecture directories, rather
       # than the otherwise empty gems/<name>/lib tree.
       original.files.grep(/\.(rb|so|bundle|dll)$/).each do |relative|
-        roots = [RbConfig::CONFIG.fetch("rubylibdir"), RbConfig::CONFIG.fetch("archdir")]
+        roots = [PurifierRubyConfig.values.fetch("rubylibdir"), PurifierRubyConfig.values.fetch("archdir")]
         inputs = roots.map do |root|
           exact = File.join(root, relative)
           File.file?(exact) ? [exact] : Dir.glob(File.join(root, "**", relative))
@@ -122,7 +158,7 @@ selected.values.each do |original|
       end
       original.extensions.each do |extension|
         prefix = extension.sub(/\Aext\//, "").sub(/\/extconf\.rb\z/, "")
-        arch = RbConfig::CONFIG.fetch("archdir")
+        arch = PurifierRubyConfig.values.fetch("archdir")
         Dir.glob([File.join(arch, prefix + ".{so,bundle,dll}"), File.join(arch, prefix, "**", "*.{so,bundle,dll}")]).each do |input|
           target = File.join(directory, "lib", input.sub(/\A#{Regexp.escape(arch + "/")}/, ""))
           FileUtils.mkdir_p(File.dirname(target))
@@ -170,7 +206,7 @@ selected.values.each do |original|
         Gem::Requirement.new("= #{Gem.ruby_version}")
       else
         next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
-        requirement = Gem::Requirement.new(">= #{RUBY_VERSION}", "< #{next_release}")
+        requirement = Gem::Requirement.new([">= #{RUBY_VERSION}", "< #{next_release}"])
         if spec.respond_to?(:ruby_code, true)
           begin
             # The native installed-gemspec serializer in older RubyGems

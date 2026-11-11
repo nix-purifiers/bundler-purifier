@@ -31,7 +31,8 @@ parser.add_argument('--sdk-check', default='ruby18-sdk')
 parser.add_argument('--provider-check', default='ruby18-app')
 parser.add_argument('--ruby-version', default='1.8.7')
 parser.add_argument('--ruby-requirement')
-parser.add_argument('--ruby-patchlevel', type=int, default=374)
+parser.add_argument('--ruby-patchlevel', default='374')
+parser.add_argument('--publisher-plugin', choices=['gemcutter-0.3.0'])
 parser.add_argument('--versionless', action='store_true')
 parser.add_argument('--extra-gem-path', type=Path)
 parser.add_argument('--rubygems-version', default='2.6.14')
@@ -41,6 +42,9 @@ parser.add_argument('--git-source', action='store_true')
 parser.add_argument('--prefetch-git', type=Path)
 parser.add_argument('--rubygems-update-archive', type=Path)
 args = parser.parse_args()
+assert args.ruby_patchlevel == 'absent' or re.fullmatch(r'-?[0-9]+', args.ruby_patchlevel)
+assert (args.ruby_patchlevel == 'absent') == (args.ruby_version == '1.8.4')
+assert args.publisher_plugin is None or (args.ruby_version in ('1.8.4', '1.8.5') and args.rubygems_version == '1.3.5')
 assert not args.git_source or (args.yaml_sdk and args.prefetch_git and args.prefetch_git.is_file())
 work = args.results.resolve() if args.results else Path(tempfile.mkdtemp(prefix='ruby18-incoming-'))
 work.mkdir(parents=True, exist_ok=args.results is None)
@@ -52,7 +56,7 @@ deadline = time.monotonic() + 1800
 capture_server = None
 home = work / 'home'
 home.mkdir()
-if args.rubygems_version == '1.3.7':
+if args.rubygems_version in ('1.3.5', '1.3.7'):
     # This native client predates NO_PROXY. Keep the loopback registry on
     # the SDK's official no-proxy setting without changing Nix's network.
     fixture_gem_config = home / '.gemrc'
@@ -75,7 +79,7 @@ def save():
 
 
 def run(label, command, cwd=ROOT, environment=None, success=True):
-    if len(receipt['commands']) >= 32:
+    if len(receipt['commands']) >= 36:
         raise AssertionError('bounded command budget exhausted')
     argv = list(map(str, command))
     stdout, stderr = logs / (label + '.stdout'), logs / (label + '.stderr')
@@ -113,12 +117,17 @@ def run(label, command, cwd=ROOT, environment=None, success=True):
 
 try:
     versions = run('native-versions', [args.sdk / 'bin/ruby', '-e',
-        'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; puts [RUBY_VERSION,RUBY_PATCHLEVEL,Gem::VERSION,Bundler::VERSION,Gem.ruby,RbConfig::CONFIG.fetch("prefix")].join("|")'])
+        'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; puts [RUBY_VERSION,(defined?(RUBY_PATCHLEVEL) ? RUBY_PATCHLEVEL : "absent"),Gem::VERSION,Bundler::VERSION,Gem.ruby,(defined?(RbConfig) ? RbConfig::CONFIG : Config::CONFIG).fetch("prefix")].join("|")'])
     version_fields = versions.strip().split('|')
     assert version_fields[:4] == [args.ruby_version, str(args.ruby_patchlevel), args.rubygems_version, args.bundler_version], versions
-    if args.rubygems_version == '1.3.7':
+    if args.rubygems_version in ('1.3.5', '1.3.7'):
         run('native-fixture-proxy-config', [args.sdk / 'bin/ruby', '-rrubygems', '-e',
             'abort unless Gem.configuration[:http_proxy] == :no_proxy'])
+    if args.publisher_plugin:
+        plugins = run('native-publisher-profile', [args.sdk / 'bin/gem', 'list', '--local'])
+        assert re.search(r'^gemcutter \(0\.3\.0\)$', plugins, re.M)
+        assert re.search(r'^json_pure \(1\.8\.6\)$', plugins, re.M)
+        receipt['publisherPlugin'] = dict(name='gemcutter', version='0.3.0', dependencies=[dict(name='json_pure', version='1.8.6')])
     actual_ruby, actual_prefix = version_fields[4:]
     assert Path(actual_ruby).is_file()
     receipt['actualRubyExecutableSha256'] = hashlib.sha256(Path(actual_ruby).read_bytes()).hexdigest()
@@ -194,7 +203,7 @@ end
         consumer = project / 'lib/incoming_consumer.rb'
         consumer.write_text(consumer.read_text().replace('    HistoricalGreeting.answer', '    require "git_leaf"\n    abort unless GitLeaf.answer == 17\n    HistoricalGreeting.answer'))
     consumer_file = project / 'lib/incoming_consumer.rb'
-    consumer_file.write_text(consumer_file.read_text().replace('RUBY_VERSION == "1.8.7"', 'RUBY_VERSION == ' + json.dumps(args.ruby_version)).replace('RUBY_PATCHLEVEL == 374', 'RUBY_PATCHLEVEL == ' + str(args.ruby_patchlevel)))
+    consumer_file.write_text(consumer_file.read_text().replace('RUBY_VERSION == "1.8.7"', 'RUBY_VERSION == ' + json.dumps(args.ruby_version)).replace('RUBY_PATCHLEVEL == 374', ('!defined?(RUBY_PATCHLEVEL)' if args.ruby_patchlevel == 'absent' else 'RUBY_PATCHLEVEL == ' + str(args.ruby_patchlevel))))
     reference = f'path:{source}#checks.x86_64-linux.{args.provider_check}'
     command = args.cli / 'bin/bundler-purifier'
     run('capture-input', [command, 'lock', '--input', reference], project)
@@ -245,7 +254,7 @@ end
     capture_server = None
     receipt['captureRegistryRequests'] = capture_requests
     receipt['captureRegistryStoppedBeforeOfflineExecution'] = True
-    code = 'require "incoming_consumer"; require "bundler/version"; abort unless IncomingConsumer.answer==42; puts "INCOMING|#{RUBY_VERSION}|#{Gem::VERSION}|#{Bundler::VERSION}|42"'
+    code = 'require "incoming_consumer"; require "bundler/version" unless defined?(Bundler::VERSION); abort unless IncomingConsumer.answer==42; puts "INCOMING|#{RUBY_VERSION}|#{Gem::VERSION}|#{Bundler::VERSION}|42"'
     output = run('wrapper-runtime', [args.cli / 'bin/bundle', 'exec', 'ruby', '-Ilib', '-e', code], project)
     assert output == f'INCOMING|{args.ruby_version}|{args.rubygems_version}|{args.bundler_version}|42\n', output
     expression = work / 'consumer.nix'
@@ -334,7 +343,10 @@ in build {
 
     if args.yaml_sdk:
         import copy
-        for label in ('missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes'):
+        yaml_negatives = ['missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes']
+        if args.ruby_patchlevel == 'absent':
+            yaml_negatives.append('fabricated-patchlevel')
+        for label in yaml_negatives:
             variant = copy.deepcopy(captured)
             if label == 'missing-snapshot':
                 variant.pop('bundlerNativeLock')
@@ -342,6 +354,8 @@ in build {
                 variant['bundlerNativeLock']['nativeHash'] = 'sha256-invalid'
             elif label == 'wrong-sdk':
                 variant['bundlerNativeLock']['observed']['bundler'] = '0.9.25'
+            elif label == 'fabricated-patchlevel':
+                variant['bundlerNativeLock']['observed']['patchlevel'] = 0
             else:
                 (project / 'Gemfile.lock').write_bytes(native_lock + b'\n')
             variant.pop('contentHash')
@@ -356,7 +370,7 @@ in build {
             finally:
                 (project / 'Gemfile.lock').write_bytes(native_lock)
                 (project / 'bundler-purifier.lock.json').write_bytes(lock_bytes)
-        receipt['nativeYamlNegatives'] = ['missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes']
+        receipt['nativeYamlNegatives'] = yaml_negatives
 
     archives = {path.name: path.read_bytes() for path in (repository / 'gems').glob('*.gem')}
     assert len(archives) == 3 + int(args.git_source)
@@ -374,6 +388,7 @@ in build {
         assert update is not None and update.is_file()
         update_bytes = update.read_bytes()
         update_hashes = {
+            '1.3.5': '120fb14456a33991aea765b095010f566f650cf914d9dad0ef8d1241edcabfc5',
             '1.3.7': 'af7d7d4085051f113a1fba822c9ba641cf52e9eba9fb4311cdbcd6be6dd0e80c',
             '1.8.30': 'e9f5e3052c5db8d1bf77c2a65047ed5bd9977b73c0ed908c406610210591854c',
             '2.7.6': 'ee5ef219ac97f5499c31e6071eae424c3265620ece33b5cc66e09fa30f22086a',
@@ -445,7 +460,11 @@ in build {
         publish = [command, 'publish', '--host', host, *proxy_flags]
         run('publish-projected', publish, project, publication)
         assert stored == archives
-        assert publication_agents and all(agent.removeprefix('Ruby, ').startswith('RubyGems/' + args.rubygems_version + ' ') for agent in publication_agents), publication_agents
+        if args.publisher_plugin == 'gemcutter-0.3.0':
+            # The genuine 0.3.0 artifact retains this upstream 0.2.0 UA.
+            assert publication_agents and all(agent == 'Gemcutter/0.2.0' for agent in publication_agents), publication_agents
+        else:
+            assert publication_agents and all(agent.removeprefix('Ruby, ').startswith('RubyGems/' + args.rubygems_version + ' ') for agent in publication_agents), publication_agents
         receipt['publicationNativeUserAgents'] = publication_agents
         count = len(uploads)
         run('publish-dedup', publish, project, publication)
@@ -458,7 +477,7 @@ in build {
         gem_help = run('native-gem-install-help', [args.sdk / 'bin/gem', 'help', 'install'], ordinary, ordinary_env)
         doc_flags = ['--no-document'] if '--no-document' in gem_help or '--[no-]document' in gem_help else ['--no-rdoc', '--no-ri']
         clear_flags = ['--clear-sources'] if '--clear-sources' in gem_help else []
-        if args.rubygems_version == '1.3.7':
+        if args.rubygems_version in ('1.3.5', '1.3.7'):
             run('native-ordinary-sources', [args.sdk / 'bin/ruby', '-rrubygems', '-e',
                 'Gem.configuration; abort unless Gem.sources == [ARGV.fetch(0)]', host], ordinary, ordinary_env)
         run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, *proxy_flags, *clear_flags, '--prerelease',
@@ -467,12 +486,12 @@ in build {
 require "digest/sha2"
 abort "purifier leaked into ordinary consumer" if defined?(PurifierGemInputs)
 abort unless IncomingConsumer.answer == 42 && JSON.parser == JSON::Ext::Parser
-puts "ORDINARY|#{RUBY_VERSION}|#{RUBY_PATCHLEVEL}|#{Gem::VERSION}|42"
+puts "ORDINARY|#{RUBY_VERSION}|#{defined?(RUBY_PATCHLEVEL) ? RUBY_PATCHLEVEL : "absent"}|#{Gem::VERSION}|42"
 paths = File.readlines("/proc/self/maps").map { |line| line.split.last }.uniq.select { |path| path =~ /json\/ext\/parser\.so$/ }
 abort "ambiguous parser" unless paths.size == 1
 native = paths.first
 abort "not installed ordinary gem" unless native.index(ENV.fetch("GEM_HOME") + "/") == 0
-puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
+puts "NATIVE|#{native}|#{File.open(native, "rb") { |file| Digest::SHA256.hexdigest(file.read) }}"
 '''
         ordinary_output = run('ordinary-runtime', [args.sdk / 'bin/ruby', '-e', ordinary_code], ordinary, ordinary_env)
         assert f'ORDINARY|{args.ruby_version}|{args.ruby_patchlevel}|{args.rubygems_version}|42' in ordinary_output.splitlines()

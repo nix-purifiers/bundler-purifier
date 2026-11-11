@@ -568,6 +568,20 @@ in
       sourceHash = "sha256-EY5vJK/OjooQ3O0jY1Fo5Y2myRIaIfEgyC9CXUCh4yE=";
       legacySSL = true;
     };
+    native184 = import ./ruby184-sdk.nix { inherit pkgs olderRubySource; };
+    project184 = build {
+      src = ./fixtures/ruby184;
+      ruby = native184.sdk;
+      nativeBuildInputs = [ native184.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    native185 = import ./ruby185-sdk.nix { inherit pkgs olderRubySource; };
+    project185 = build {
+      src = ./fixtures/ruby185;
+      ruby = native185.sdk;
+      nativeBuildInputs = [ native185.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     native186 = import ./ruby18-sdk.nix {
       inherit pkgs olderRubySource;
       rubyPackage = runtime186;
@@ -897,6 +911,39 @@ in
           touch $out
         '';
     rubygems137-update = native186.rubygemsUpdate;
+    ruby184-sdk = native184.sdk;
+    rubygems135-update = native184.rubygemsUpdate;
+    ruby184-publisher-gems = native184.publisherGems;
+    ruby184-app = project184.packages.app;
+    ruby184-native-extension = project184.tests;
+    ruby184-repository = project184.release.projections.rubygems;
+    ruby184-cli = cli.override {
+      projectRuby = native184.sdk;
+      projectNativeBuildInputs = [ native184.compiler ];
+    };
+    ruby184-input-composition =
+      pkgs.runCommand "ruby184-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native184.sdk} ${project184.release.projections.rubygems} ${project184.release.projections.rubygems.catalog} 1.8.4 0.9.9 --versionless --rubygems-version 1.3.5 --no-ruby-dsl
+          touch "$out"
+        '';
+    ruby185-sdk = native185.sdk;
+    ruby185-publisher-gems = native185.publisherGems;
+    ruby185-app = project185.packages.app;
+    ruby185-native-extension = project185.tests;
+    ruby185-repository = project185.release.projections.rubygems;
+    ruby185-cli = cli.override {
+      projectRuby = native185.sdk;
+      projectNativeBuildInputs = [ native185.compiler ];
+    };
+    ruby185-input-composition =
+      pkgs.runCommand "ruby185-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native185.sdk} ${project185.release.projections.rubygems} ${project185.release.projections.rubygems.catalog} 1.8.5 0.9.9 --versionless --rubygems-version 1.3.5 --no-ruby-dsl
+          touch "$out"
+        '';
     ruby186-sdk = native186.sdk;
     ruby186-app = project186.packages.app;
     ruby186-native-extension = project186.tests;

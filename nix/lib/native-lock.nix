@@ -46,7 +46,12 @@ let
       "bundler"
       "platform"
     ]
-    && builtins.isInt snapshot.observed.patchlevel
+    && (
+      if snapshot.observed.ruby == "1.8.4" then
+        snapshot.observed.patchlevel == null
+      else
+        builtins.isInt snapshot.observed.patchlevel
+    )
     && snapshot.observed.bundler == bundlerVersion
     && snapshot.observed.ruby == ruby
     && exact [

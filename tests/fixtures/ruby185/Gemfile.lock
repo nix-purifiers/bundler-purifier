@@ -1,0 +1,23 @@
+--- 
+specs: 
+- json: 
+    version: 1.8.6
+- historical_greeting: 
+    version: 1.0.0
+    source: 1
+hash: 0622e6d2871181e92fe363dde28b1132ec0be034
+sources: 
+- Rubygems: 
+    uri: https://rubygems.org
+- Path: 
+    path: !ruby/object:Pathname 
+      path: .
+dependencies: 
+  historical_greeting: 
+    version: = 1.0.0
+    group: 
+    - :default
+  json: 
+    version: = 1.8.6
+    group: 
+    - :default

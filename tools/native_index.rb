@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: MIT
+# Construct and combine genuine native indexes through the available SDK API.
+module PurifierNativeIndex
+  def self.build
+    if Bundler::Index.respond_to?(:build)
+      Bundler::Index.build { |index| yield index }
+    else
+      index = Bundler::Index.new
+      yield index
+      index
+    end
+  end
+
+  def self.use(index, other)
+    index.respond_to?(:use) ? index.use(other) : index.merge!(other)
+  end
+
+  def self.installed
+    Bundler::Index.respond_to?(:installed_gems) ? Bundler::Index.installed_gems : Bundler::Index.from_installed_gems
+  end
+
+  def self.installer_index_method(klass)
+    @installer_index_methods ||= {}
+    @installer_index_methods[klass.object_id] ||= (
+      klass.method_defined?(:remote_index) || klass.private_method_defined?(:remote_index) ? :remote_index : :index
+    )
+  end
+
+  def self.local(sources)
+    build do |index|
+      sources.each do |source|
+        if source.respond_to?(:local_specs)
+          use(index, source.local_specs)
+        elsif source.is_a?(Bundler::Source::Rubygems) && source.uri.scheme == "file"
+          use(index, source.specs)
+        end
+      end
+      use(index, installed)
+      use(index, cached)
+    end
+  end
+
+  def self.cached
+    return Bundler::Index.cached_gems if Bundler::Index.respond_to?(:cached_gems)
+    runtime = Bundler.load
+    path = runtime.respond_to?(:cache_path, true) ? runtime.send(:cache_path) : runtime.root.join("vendor/cache")
+    Bundler::Index.from_cached_specs(path)
+  end
+end
