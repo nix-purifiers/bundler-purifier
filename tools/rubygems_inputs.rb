@@ -310,7 +310,12 @@ module PurifierGemInputs
           Dir[File.join(path, "gems", "*.gem")].sort.each do |archive|
             spec = Gem::Format.from_file_by_path(archive).spec
             next unless PACKAGES.key?(spec.name)
-            installed = Gem::Specification.find_all_by_name(spec.name, "= #{spec.version}").find do |candidate|
+            candidates = if Gem::Specification.respond_to?(:find_all_by_name)
+              Gem::Specification.find_all_by_name(spec.name, "= #{spec.version}")
+            else
+              Gem.source_index.find_name(spec.name, "= #{spec.version}")
+            end
+            installed = candidates.find do |candidate|
               candidate.platform.to_s == spec.platform.to_s && candidate.loaded_from &&
                 (candidate.full_gem_path.index(Gem.dir + "/") == 0) && File.file?(candidate.loaded_from)
             end
