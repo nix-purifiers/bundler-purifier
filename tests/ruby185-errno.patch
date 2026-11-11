@@ -1,0 +1,11 @@
+--- a/math.c
++++ b/math.c
+@@ -34,7 +34,7 @@
+ 	if (isnan(x)) {
+ #if defined(EDOM)
+ 	    errno = EDOM;
+-#elif define(ERANGE)
++#elif defined(ERANGE)
+ 	    errno = ERANGE;
+ #endif
+ 	    continue;

@@ -1,0 +1,5 @@
+source "https://rubygems.org"
+path "." do
+  gem "historical_greeting", "= 1.0.0"
+end
+gem "json", "= 1.8.6"
