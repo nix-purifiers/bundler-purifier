@@ -1,0 +1,7 @@
+task default: :test
+
+task :test do
+  require_relative "lib/greeting"
+  raise "unexpected greeting" unless Greeting.hello("nix").to_s.include?("hello, nix")
+  puts "greeting test passed"
+end
