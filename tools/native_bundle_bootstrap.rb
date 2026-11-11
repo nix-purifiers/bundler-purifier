@@ -155,4 +155,9 @@ if !Bundler::Definition.respond_to?(:build) && ENV["BUNDLER_PURIFIER_INPUT_DATA"
 end
 require File.expand_path("native_cache_path", File.dirname(__FILE__))
 PurifierNativeCachePath.install
+if ARGV.first == "exec" && ENV["BUNDLER_PURIFIER_INPUT_DATA"] &&
+    !Bundler::Definition.respond_to?(:build) && !Bundler.respond_to?(:env_file)
+  require File.expand_path("native_exec_inputs", File.dirname(__FILE__))
+  PurifierNativeExecInputs.install
+end
 load $0
