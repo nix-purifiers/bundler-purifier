@@ -50,7 +50,7 @@ home.mkdir()
 temporary = work / 'tmp'
 temporary.mkdir()
 env = {key: value for key, value in os.environ.items() if not key.startswith(('BUNDLE_', 'GEM_', 'RUBY'))}
-env.update(HOME=str(home), TMPDIR=str(temporary), LC_ALL='C', PATH=f'{args.sdk}/bin:{args.cli}/bin:' + os.environ['PATH'],
+env.update(HOME=str(home), TMPDIR=str(temporary), XDG_CACHE_HOME=str(work / 'cache'), LC_ALL='C', PATH=f'{args.sdk}/bin:{args.cli}/bin:' + os.environ['PATH'],
            BUNDLE_USER_HOME=str(work / 'bundle-home'))
 if args.versionless:
     env['BUNDLER_PURIFIER_BUNDLER_VERSION'] = args.bundler_version
