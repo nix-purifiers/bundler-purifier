@@ -284,8 +284,13 @@ jobs:
             --results "$RUNNER_TEMP/ruby41-incoming-evidence"
 
       - name: Pre-lockfile Bundler 0.8 native frontend and relocation
+        if: runner.os == 'Linux' && runner.arch == 'X64'
         run: |
-          mapfile -t prelock < <(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby184-bundler08-sdk .#checks.x86_64-linux.ruby184-bundler08-cli)
+          prelock_paths=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby184-bundler08-sdk .#checks.x86_64-linux.ruby184-bundler08-cli)
+          mapfile -t prelock <<< "$prelock_paths"
+          test "${#prelock[@]}" -eq 2
+          test -x "${prelock[0]}/bin/ruby"
+          test -x "${prelock[1]}/bin/bundler-purifier"
           python3 tests/prelock-native.py --sdk "${prelock[0]}" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-native-evidence"
           python3 tests/prelock-input.py --provider "$RUNNER_TEMP/bundler08-native-evidence/project" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-input-evidence"
           python3 tests/prelock-relocation.py --project "$RUNNER_TEMP/bundler08-native-evidence/project" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-relocation-evidence"
