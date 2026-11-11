@@ -540,6 +540,45 @@ in
       nativeBuildInputs = [ historicalRubies.stdenv.cc ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    runtime191 = import ./early-ruby-runtime.nix {
+      inherit pkgs olderRubySource;
+      rubyVersion = "1.9.1";
+      patchlevel = 431;
+      sourceHash = "sha256-65GbkcT45/BACuNKu6z5O8qHAV9US5zx87TGEoNyonE=";
+      legacySSL = true;
+    };
+    native191 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubyPackage = runtime191;
+      rubyVersion = "1.9.1";
+      runtimeName = "ruby191-native";
+      disableBuiltinGemPrelude = true;
+    };
+    project191 = build {
+      src = ./fixtures/ruby191;
+      ruby = native191.sdk;
+      nativeBuildInputs = [ native191.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    runtime192 = import ./early-ruby-runtime.nix {
+      inherit pkgs olderRubySource;
+      rubyVersion = "1.9.2";
+      patchlevel = 330;
+      sourceHash = "sha256-I+9F/a7MXWx7Tp4tUbI4F/xqqCJaIPEj9/qYdg6LXKk=";
+      legacySSL = false;
+    };
+    native192 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubyPackage = runtime192;
+      rubyVersion = "1.9.2";
+      runtimeName = "ruby192-native";
+    };
+    project192 = build {
+      src = ./fixtures/ruby192;
+      ruby = native192.sdk;
+      nativeBuildInputs = [ native192.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project40 = build {
       src = ./fixtures/ruby40;
       ruby = pkgs.ruby_4_0;
@@ -740,6 +779,36 @@ in
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${historicalRubies.ruby_2_7} ${project27.release.projections.rubygems} ${project27.release.projections.rubygems.catalog} 2.7.1 2.1.4
           touch $out
+        '';
+    ruby191-sdk = native191.sdk;
+    ruby191-app = project191.packages.app;
+    ruby191-native-extension = project191.tests;
+    ruby191-repository = project191.release.projections.rubygems;
+    ruby191-cli = cli.override {
+      projectRuby = native191.sdk;
+      projectNativeBuildInputs = [ native191.compiler ];
+    };
+    ruby191-input-composition =
+      pkgs.runCommand "ruby191-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native191.sdk} ${project191.release.projections.rubygems} ${project191.release.projections.rubygems.catalog} 1.9.1 1.17.3
+          touch "$out"
+        '';
+    ruby192-sdk = native192.sdk;
+    ruby192-app = project192.packages.app;
+    ruby192-native-extension = project192.tests;
+    ruby192-repository = project192.release.projections.rubygems;
+    ruby192-cli = cli.override {
+      projectRuby = native192.sdk;
+      projectNativeBuildInputs = [ native192.compiler ];
+    };
+    ruby192-input-composition =
+      pkgs.runCommand "ruby192-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native192.sdk} ${project192.release.projections.rubygems} ${project192.release.projections.rubygems.catalog} 1.9.2 1.17.3
+          touch "$out"
         '';
     ruby40-sdk = pkgs.ruby_4_0;
     ruby40-native-extension = project40.tests;

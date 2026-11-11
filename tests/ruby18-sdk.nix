@@ -11,6 +11,9 @@
   rubyPackage ? null,
   rubyVersion ? "1.8.7",
   runtimeName ? "ruby187",
+  # Ruby 1.9.1 has a compiled-in loader that predates library upgrades.
+  # Explicitly load the selected real RubyGems after suppressing that loader.
+  disableBuiltinGemPrelude ? false,
 }:
 let
   old = import olderRubySource {
@@ -46,7 +49,7 @@ let
       ''
         mkdir -p "$out/bin"
         makeWrapper ${ruby}/bin/ruby "$out/bin/ruby" --prefix RUBYLIB : ${rubygems}/lib --set LC_ALL C \
-          --set SSL_CERT_FILE ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+          --set SSL_CERT_FILE ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt${pkgs.lib.optionalString disableBuiltinGemPrelude " --prefix RUBYOPT ' ' --disable-gems"}
         makeWrapper "$out/bin/ruby" "$out/bin/gem" --add-flags ${rubygems}/bin/gem
       '';
   codecGems =
