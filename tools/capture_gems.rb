@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Capture the target Bundler SDK's actual runtime graph after native builds.
 require "bundler"
+require File.expand_path("ruby_config", File.dirname(__FILE__))
 require "rubygems/package"
 require "json"
 require "fileutils"
@@ -64,9 +65,9 @@ archives = []
 intrinsics = []
 selected.values.each do |original|
   next if original.name == "bundler" || provided.include?([original.name, original.version.to_s])
-  if (original.full_gem_path.index(RbConfig::CONFIG.fetch("prefix") + "/") == 0)
+  if (original.full_gem_path.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0)
     intrinsics << { "name" => original.name, "version" => original.version.to_s,
-                    "sdk" => RbConfig::CONFIG.fetch("prefix"), "ruby" => RUBY_VERSION,
+                    "sdk" => PurifierRubyConfig.values.fetch("prefix"), "ruby" => RUBY_VERSION,
                     "system" => Gem::Platform.local.to_s,
                     "dependencies" => original.runtime_dependencies.map { |dependency| { "name" => dependency.name, "requirement" => dependency.instance_variable_get(:@requirement).to_s } } }
     next
@@ -108,7 +109,7 @@ selected.values.each do |original|
       # Default gems live in Ruby's stdlib/architecture directories, rather
       # than the otherwise empty gems/<name>/lib tree.
       original.files.grep(/\.(rb|so|bundle|dll)$/).each do |relative|
-        roots = [RbConfig::CONFIG.fetch("rubylibdir"), RbConfig::CONFIG.fetch("archdir")]
+        roots = [PurifierRubyConfig.values.fetch("rubylibdir"), PurifierRubyConfig.values.fetch("archdir")]
         inputs = roots.map do |root|
           exact = File.join(root, relative)
           File.file?(exact) ? [exact] : Dir.glob(File.join(root, "**", relative))
@@ -122,7 +123,7 @@ selected.values.each do |original|
       end
       original.extensions.each do |extension|
         prefix = extension.sub(/\Aext\//, "").sub(/\/extconf\.rb\z/, "")
-        arch = RbConfig::CONFIG.fetch("archdir")
+        arch = PurifierRubyConfig.values.fetch("archdir")
         Dir.glob([File.join(arch, prefix + ".{so,bundle,dll}"), File.join(arch, prefix, "**", "*.{so,bundle,dll}")]).each do |input|
           target = File.join(directory, "lib", input.sub(/\A#{Regexp.escape(arch + "/")}/, ""))
           FileUtils.mkdir_p(File.dirname(target))

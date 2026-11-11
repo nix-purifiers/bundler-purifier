@@ -84,7 +84,7 @@ end
 snapshot = {
   "format" => "bundler-yaml",
   "nativeHash" => "sha256-" + Base64.encode64(Digest::SHA256.digest(bytes)).delete("\n"),
-  "observed" => { "ruby" => RUBY_VERSION, "patchlevel" => RUBY_PATCHLEVEL, "rubygems" => Gem::VERSION,
+  "observed" => { "ruby" => RUBY_VERSION, "patchlevel" => (defined?(RUBY_PATCHLEVEL) ? RUBY_PATCHLEVEL : nil), "rubygems" => Gem::VERSION,
                     "bundler" => Bundler::VERSION, "platform" => Gem::Platform.local.to_s },
   "parsed" => parsed
 }

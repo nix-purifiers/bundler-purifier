@@ -2,6 +2,7 @@
 # Loaded by a facade Gemfile before Bundler evaluates the user's Gemfile.
 require "bundler"
 require File.expand_path("repository_uri", File.dirname(__FILE__))
+require File.expand_path("ruby_config", File.dirname(__FILE__))
 module PurifierGemInputs
   CLASS_METHODS_CAN_MOVE = begin
     probe = Class.new { def purifier_probe; true; end }
@@ -177,7 +178,7 @@ module PurifierGemInputs
       values = super
       return values if name.nil? || name.include?("\0") || !values.any? { |dependency| PACKAGES.key?(dependency.name) }
       begin
-        return values if full_gem_path.index(RbConfig::CONFIG.fetch("prefix") + "/") == 0
+        return values if full_gem_path.index(PurifierRubyConfig.values.fetch("prefix") + "/") == 0
       rescue Gem::Exception
         # Early RubyGems has no installation path until the SDK assigns a
         # source to this genuine specification. Keep its native array then.
@@ -343,8 +344,8 @@ module PurifierGemInputs
     def to_definition(*arguments)
       intrinsics = PACKAGES.values.select { |package| package["intrinsic"] }
       intrinsics.each do |package|
-        unless package.fetch("sdk") == RbConfig::CONFIG.fetch("prefix")
-          raise "bundler-purifier: Nix input requires Ruby SDK #{package.fetch('sdk')}, current SDK is #{RbConfig::CONFIG.fetch('prefix')}"
+        unless package.fetch("sdk") == PurifierRubyConfig.values.fetch("prefix")
+          raise "bundler-purifier: Nix input requires Ruby SDK #{package.fetch('sdk')}, current SDK is #{PurifierRubyConfig.values.fetch('prefix')}"
         end
       end
       if intrinsics.any?
