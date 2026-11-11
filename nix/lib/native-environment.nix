@@ -61,7 +61,12 @@ let
       "platform"
     ]
     && (
-      if item.ruby == "1.8.4" then
+      if
+        builtins.elem item.ruby [
+          "1.8.3"
+          "1.8.4"
+        ]
+      then
         item.patchlevel == null
       else
         builtins.isInt item.patchlevel && item.patchlevel >= -1 && item.patchlevel <= 1000000
@@ -89,21 +94,43 @@ let
     ]
     && component item.clientArtifact
     && item.clientArtifact.name == "bundler"
-    && item.clientArtifact.version == "0.8.1"
     && lib.elem item.clientArtifact item.components
     && report item.clientReport
-    &&
-      item.clientReport == {
-        name = "Bundler::VERSION";
-        value = "0.8.1";
-      }
     && report item.rubygemsReport
-    &&
-      item.rubygemsReport == {
-        name = "Gem::VERSION";
-        value = "1.3.5";
-      }
-    && lib.any (entry: entry.name == "rubygems" && entry.version == "1.3.5") item.components;
+    && (
+      (
+        item.clientArtifact.version == "0.8.1"
+        &&
+          item.clientReport == {
+            name = "Bundler::VERSION";
+            value = "0.8.1";
+          }
+        &&
+          item.rubygemsReport == {
+            name = "Gem::VERSION";
+            value = "1.3.5";
+          }
+        && lib.any (entry: entry.name == "rubygems" && entry.version == "1.3.5") item.components
+        && lib.any (entry: entry.name == "json" && entry.version == "1.8.6") item.components
+      )
+      || (
+        item.clientArtifact.version == "0.3.1"
+        && item.ruby == "1.8.3"
+        &&
+          item.clientReport == {
+            name = "Bundler::VERSION";
+            value = "0.5.0";
+          }
+        &&
+          item.rubygemsReport == {
+            name = "Gem::RubyGemsVersion";
+            value = "1.0.1";
+          }
+        && lib.any (entry: entry.name == "rubygems" && entry.version == "1.0.1") item.components
+        && lib.any (entry: entry.name == "json" && entry.version == "1.1.3") item.components
+      )
+    );
+
   clauses = items: list items && items != [ ] && lib.all scalar items && unique items;
   dependency =
     item:
@@ -241,6 +268,7 @@ let
         sum: item: sum + builtins.stringLength item.name + builtins.stringLength item.version + 2
       ) 0 value.bindings <= 1048576
     && sdk value.sdk
+    && value.sdk.clientArtifact.version == "0.8.1"
     &&
       lib.all
         (

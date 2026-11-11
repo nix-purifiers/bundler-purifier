@@ -66,7 +66,7 @@ let
       ''
         export HOME=$TMPDIR GEM_HOME=$out/gems GEM_PATH=$out/gems
         gem install --local ${documentFlags} --install-dir "$out/gems" ${bundlerGem} ${jsonGem}
-        ruby -e 'require "rubygems"; gem "json", "= ${jsonVersion}"; require "json"; abort unless RUBY_VERSION == "${rubyVersion}" && Gem::VERSION == "${rubygemsVersion}"; abort unless JSON::VERSION == "${jsonVersion}" && JSON.parser == JSON::Ext::Parser; abort unless JSON.parse(%q({"answer":42}))["answer"] == 42'
+        ruby -e 'require "rubygems"; gem "json", "= ${jsonVersion}"; require "json"; abort unless RUBY_VERSION == "${rubyVersion}" && (defined?(Gem::VERSION) ? Gem::VERSION : Gem::RubyGemsVersion) == "${rubygemsVersion}"; abort unless JSON::VERSION == "${jsonVersion}" && JSON.parser == JSON::Ext::Parser; abort unless JSON.parse(%q({"answer":42}))["answer"] == 42'
       '';
   sdk =
     pkgs.runCommand "${runtimeName}-rubygems${gemId}-sdk"

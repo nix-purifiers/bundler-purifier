@@ -97,7 +97,9 @@ module PurifierNativeEnvironmentSDK
     names = components.map { |entry| entry.fetch("name") }.sort
     contract.reject!("unsupported native SDK components") unless [ %w[bundler json ruby rubygems], %w[bundler gemcutter json json_pure ruby rubygems] ].include?(names)
     probe = File.join(__dir__, "native_environment_sdk_probe.rb")
-    observation = JSON.parse(run(File.join(sdk, "bin/ruby"), probe, descriptor_path, env: clean_environment))
+    artifact_version = components.find { |entry| entry.fetch("name") == "bundler" }.fetch("version")
+    json_version = components.find { |entry| entry.fetch("name") == "json" }.fetch("version")
+    observation = JSON.parse(run(File.join(sdk, "bin/ruby"), probe, descriptor_path, artifact_version, json_version, env: clean_environment))
     # Nix builders supply closureInfo's authoritative store-paths file. That
     # mode hashes every physical path without needing a daemon/store database.
     closure = if closure_paths

@@ -107,7 +107,7 @@ module PurifierNativeEnvironment
     exact!(value, %w[ruby patchlevel abi platform interpreter components clientArtifact clientReport rubygemsReport closure], "native SDK")
     %w[ruby abi platform].each { |key| scalar!(value.fetch(key), key) }
     patch = value.fetch("patchlevel")
-    reject!("invalid native patchlevel") unless value.fetch("ruby") == "1.8.4" ? patch.nil? : (patch.is_a?(Integer) && patch.between?(-1, 1_000_000))
+    reject!("invalid native patchlevel") unless %w[1.8.3 1.8.4].include?(value.fetch("ruby")) ? patch.nil? : (patch.is_a?(Integer) && patch.between?(-1, 1_000_000))
     digest!(value.fetch("interpreter"))
     closure = value.fetch("closure")
     list!(closure, "SDK runtime closure")
@@ -137,8 +137,15 @@ module PurifierNativeEnvironment
       exact!(report, %w[name value], key)
       scalar!(report.fetch("value"), key)
     end
-    reject!("unsupported native interface identity") unless artifact.fetch("version") == "0.8.1" && value.fetch("clientReport") == {"name" => "Bundler::VERSION", "value" => "0.8.1"} && value.fetch("rubygemsReport") == {"name" => "Gem::VERSION", "value" => "1.3.5"}
-    reject!("RubyGems component conflicts with observed version") unless components.any? { |component| component.fetch("name") == "rubygems" && component.fetch("version") == "1.3.5" }
+    profiles = {
+      "0.8.1" => ["0.8.1", "Gem::VERSION", "1.3.5", "1.8.6"],
+      "0.3.1" => ["0.5.0", "Gem::RubyGemsVersion", "1.0.1", "1.1.3"]
+    }
+    profile = profiles[artifact.fetch("version")]
+    reject!("unsupported native interface identity") unless profile && value.fetch("clientReport") == {"name" => "Bundler::VERSION", "value" => profile[0]} && value.fetch("rubygemsReport") == {"name" => profile[1], "value" => profile[2]}
+    reject!("RubyGems component conflicts with observed version") unless components.any? { |component| component.fetch("name") == "rubygems" && component.fetch("version") == profile[2] }
+    reject!("JSON component conflicts with native profile") unless components.any? { |component| component.fetch("name") == "json" && component.fetch("version") == profile[3] }
+    reject!("unsupported early native runtime") if artifact.fetch("version") == "0.3.1" && value.fetch("ruby") != "1.8.3"
   end
 
   # This validates the new nativeResolution record only. Existing v3 readers
@@ -152,6 +159,7 @@ module PurifierNativeEnvironment
     reject!("unsupported native binding algorithm") unless value.fetch("bindingAlgorithm") == "declared-runtime-requirements-v1"
     bindings!(value.fetch("bindings"))
     sdk!(value.fetch("sdk"))
+    reject!("native interface conflicts with SDK client artifact") unless value.fetch("sdk").fetch("clientArtifact").fetch("version") == "0.8.1"
     evidence = %w[manifests snapshots].flat_map do |key|
       list!(value.fetch(key), key)
       value.fetch(key)
