@@ -750,6 +750,7 @@ in
         { nativeBuildInputs = [ pkgs.python3 ]; }
         ''
           export HOME=$TMPDIR
+          ${native23Bundler23.sdk}/bin/ruby ${../.}/tests/repository-uri.rb
           python3 ${../.}/tests/historical-composition.py ${native23Bundler23.sdk} ${project23Bundler23.release.projections.rubygems} ${project23Bundler23.release.projections.rubygems.catalog} 2.3.6 2.3.27
           touch $out
         '';
