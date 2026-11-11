@@ -199,10 +199,19 @@ module PurifierGemInputs
     end
   end
 
+  def self.repository_source?(source)
+    source.remotes.any? do |remote|
+      remote.scheme == "file" && PACKAGES.values.any? do |package|
+        !package["intrinsic"] && remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "")
+      end
+    end
+  end
+
   # Bundler 1.x has no local! or local file-source index. Feed the same
   # native archive specifications through its cached source interface.
   module LegacyRepositorySpecs
     def cached_specs
+      return super unless PurifierGemInputs.repository_source?(self)
       @purifier_legacy_cached_specs ||= super.tap do |index|
         remotes.each do |remote|
           next unless remote.scheme == "file"
@@ -234,8 +243,17 @@ module PurifierGemInputs
     include LegacyRepositorySpecs
 
     def specs
+      return super unless PurifierGemInputs.repository_source?(self)
       super.tap do |index|
         cached_specs.each { |spec| index << spec }
+      end
+    end
+  end
+
+  module LocalRepositoryChecksums
+    def checksum_store
+      super.tap do |store|
+        PurifierGemInputs.register_repository_checksums(self, store) if PurifierGemInputs.repository_source?(self)
       end
     end
   end
@@ -279,7 +297,7 @@ module PurifierGemInputs
 
   # Native Bundler checksum locks need the checksums of the actual local
   # archives before frozen resolution, just as an ordinary source supplies.
-  def self.register_repository_checksums(source)
+  def self.register_repository_checksums(source, store)
     return unless defined?(Bundler::Checksum) && Bundler::Checksum.respond_to?(:from_gem) && source.respond_to?(:checksum_store)
     return if Bundler.settings[:disable_checksum_validation]
     source.remotes.each do |remote|
@@ -289,7 +307,7 @@ module PurifierGemInputs
         spec = Bundler.rubygems.spec_from_gem(archive)
         next unless PACKAGES.key?(spec.name)
         File.open(archive, "rb") do |input|
-          source.checksum_store.register(spec, Bundler::Checksum.from_gem(input, archive))
+          store.register(spec, Bundler::Checksum.from_gem(input, archive))
         end
       end
     end
@@ -311,13 +329,11 @@ module PurifierGemInputs
       PACKAGES.values.reject { |package| package["intrinsic"] }.map { |package| package.fetch("repository") }.uniq.each do |repository|
         source = PurifierGemInputs.add_rubygems_source(@sources, repository)
         if source.respond_to?(:local!)
-          source.extend(LocalRepositorySpecs)
           source.local!
         else
           source.extend(LEGACY_YAML_LOCK ? YamlRepositorySpecs : LegacyRepositorySpecs)
         end
         source.cached! if source.respond_to?(:cached!) && ENV["BUNDLER_PURIFIER_RUNTIME"] != "1"
-        PurifierGemInputs.register_repository_checksums(source)
       end
       lockfile, unlock = arguments
       if unlock != true && lockfile && File.file?(lockfile)
@@ -418,6 +434,12 @@ if PurifierGemInputs::LEGACY_SOURCE_ARRAY
     end
   end
   PurifierGemInputs.install_patch(Bundler::Source::Rubygems, PurifierGemInputs::RepositoryIdentity)
+end
+if Bundler::Source::Rubygems.method_defined?(:local!)
+  PurifierGemInputs.install_patch(Bundler::Source::Rubygems, PurifierGemInputs::LocalRepositorySpecs)
+  if Bundler::Source::Rubygems.method_defined?(:checksum_store) && defined?(Bundler::Checksum) && Bundler::Checksum.respond_to?(:from_gem)
+    PurifierGemInputs.install_patch(Bundler::Source::Rubygems, PurifierGemInputs::LocalRepositoryChecksums)
+  end
 end
 PurifierGemInputs.install_patch(Bundler::Dependency, PurifierGemInputs::Requirements)
 PurifierGemInputs.install_patch(Gem::Specification, PurifierGemInputs::ProjectDependencies)
