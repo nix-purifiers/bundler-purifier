@@ -425,6 +425,26 @@ in
       nativeBuildInputs = [ native21.compiler ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    rubygems312Update = pkgs.fetchurl {
+      url = "https://rubygems.org/downloads/rubygems-update-3.1.2.gem";
+      hash = "sha256-e/5OXidBkeVtqNEnx53xDZEg/rhlDkutKSOPSydzpmE=";
+    };
+    historicalRubies = import historicalRubySource {
+      system = "x86_64-linux";
+      config = { };
+    };
+    project26 = build {
+      src = ./fixtures/ruby26;
+      ruby = historicalRubies.ruby_2_6;
+      nativeBuildInputs = [ historicalRubies.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    project27 = build {
+      src = ./fixtures/ruby27;
+      ruby = historicalRubies.ruby_2_7;
+      nativeBuildInputs = [ historicalRubies.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project40 = build {
       src = ./fixtures/ruby40;
       ruby = pkgs.ruby_4_0;
@@ -477,6 +497,37 @@ in
       projectRuby = native21.sdk;
       projectNativeBuildInputs = [ native21.compiler ];
     };
+    rubygems312-update = rubygems312Update;
+    ruby26-sdk = historicalRubies.ruby_2_6;
+    ruby26-native-extension = project26.tests;
+    ruby26-app = project26.packages.app;
+    ruby26-repository = project26.release.projections.rubygems;
+    ruby26-cli = cli.override {
+      projectRuby = historicalRubies.ruby_2_6;
+      projectNativeBuildInputs = [ historicalRubies.stdenv.cc ];
+    };
+    ruby26-input-composition =
+      pkgs.runCommand "ruby26-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${historicalRubies.ruby_2_6} ${project26.release.projections.rubygems} ${project26.release.projections.rubygems.catalog} 2.6.6 1.17.2
+          touch $out
+        '';
+    ruby27-sdk = historicalRubies.ruby_2_7;
+    ruby27-native-extension = project27.tests;
+    ruby27-app = project27.packages.app;
+    ruby27-repository = project27.release.projections.rubygems;
+    ruby27-cli = cli.override {
+      projectRuby = historicalRubies.ruby_2_7;
+      projectNativeBuildInputs = [ historicalRubies.stdenv.cc ];
+    };
+    ruby27-input-composition =
+      pkgs.runCommand "ruby27-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${historicalRubies.ruby_2_7} ${project27.release.projections.rubygems} ${project27.release.projections.rubygems.catalog} 2.7.1 2.1.4
+          touch $out
+        '';
     ruby40-sdk = pkgs.ruby_4_0;
     ruby40-native-extension = project40.tests;
     ruby40-app = project40.packages.app;
