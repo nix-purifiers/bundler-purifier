@@ -569,6 +569,12 @@ in
       legacySSL = true;
     };
     native184 = import ./ruby184-sdk.nix { inherit pkgs olderRubySource; };
+    project184 = build {
+      src = ./fixtures/ruby184;
+      ruby = native184.sdk;
+      nativeBuildInputs = [ native184.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     native186 = import ./ruby18-sdk.nix {
       inherit pkgs olderRubySource;
       rubyPackage = runtime186;
@@ -899,6 +905,15 @@ in
         '';
     rubygems137-update = native186.rubygemsUpdate;
     ruby184-sdk = native184.sdk;
+    rubygems135-update = native184.rubygemsUpdate;
+    ruby184-publisher-gems = native184.publisherGems;
+    ruby184-app = project184.packages.app;
+    ruby184-native-extension = project184.tests;
+    ruby184-repository = project184.release.projections.rubygems;
+    ruby184-cli = cli.override {
+      projectRuby = native184.sdk;
+      projectNativeBuildInputs = [ native184.compiler ];
+    };
     ruby186-sdk = native186.sdk;
     ruby186-app = project186.packages.app;
     ruby186-native-extension = project186.tests;
