@@ -394,29 +394,19 @@ let
         ''
       else
         ''
-          purifier_local_config_api=cli
-          ${lib.optionalString (lib.versionOlder lock.bundler "2.1") ''
-            purifier_local_config_api=$(ruby -rrubygems -e ${lib.escapeShellArg ''
+          native_bundle_local_config() {
+            # CLI flag metadata is incomplete in some older releases. Use
+            # the SDK's actual local settings API and retain its own format.
+            ruby -rrubygems -e ${lib.escapeShellArg ''
               gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION")
               require "bundler"
-              require "bundler/cli"
-              commands = Bundler::CLI.respond_to?(:all_commands) ? Bundler::CLI.all_commands : Bundler::CLI.all_tasks
-              command = commands.fetch("config")
-              puts command.options.key?("local") ? "cli" : "settings"
-            ''})
-          ''}
-          native_bundle_local_config() {
-            if [ "$purifier_local_config_api" = settings ]; then
-              # Earlier config commands have no --local flag. Use the SDK's
-              # own local settings writer so the output retains its bundle.
-              ruby -rrubygems -e ${lib.escapeShellArg ''
-                gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION")
-                require "bundler"
-                Bundler.settings[ARGV.fetch(0)] = ARGV.fetch(1)
-              ''} "$@"
-            else
-              bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local "$@"
-            fi
+              settings = Bundler.settings
+              if settings.respond_to?(:set_local)
+                settings.set_local(ARGV.fetch(0), ARGV.fetch(1))
+              else
+                settings[ARGV.fetch(0)] = ARGV.fetch(1)
+              end
+            ''} "$@"
           }
           native_bundle_local_config cache_path vendor/cache
           ${lib.optionalString (selectedInputs != [ ]) ''
