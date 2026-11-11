@@ -14,9 +14,14 @@ import tarfile
 import threading
 
 p = argparse.ArgumentParser()
-for name in ['sdk', 'publisher-sdk', 'ruby', 'core', 'nixpkgs', 'archive', 'work']:
+for name in ['sdk', 'publisher-sdk', 'core', 'nixpkgs', 'work']:
     p.add_argument('--' + name, required=True, type=Path)
+p.add_argument("--ruby", type=Path)
+p.add_argument("--cli", type=Path)
+p.add_argument("--archive", type=Path)
+p.add_argument("--core-identity", type=Path)
 a = p.parse_args()
+assert a.cli or a.ruby, "select --cli or --ruby"
 root = Path(__file__).resolve().parent.parent
 a.work.mkdir()
 logs = a.work / 'logs'
@@ -30,7 +35,17 @@ env.update(HOME=str(home), BUNDLER_PURIFIER_PROJECT_RUBY=str(a.sdk),
     BUNDLER_PURIFIER_NIXPKGS='builtins.storePath ' + json.dumps(str(a.nixpkgs)))
 receipt = dict(complete=False, commands=[], scope='Local Ruby183/Gem101/Bundler artifact031 project, separately attested Gem135 publisher, ordinary Gem101 consumer.')
 receipt['sourceFiles'] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(list((root / 'tools').glob('*.rb')) + list((root / 'nix/lib').glob('*.nix')) + [root / 'bin/bundler-purifier', Path(__file__).resolve()])}
-receipt['coreRevision'] = subprocess.check_output(['git', '-C', str(a.core), 'rev-parse', 'HEAD'], text=True).strip()
+if a.core_identity:
+    import re
+    identity = json.loads(a.core_identity.read_text())
+    assert set(identity) == {'revision', 'narHash'}
+    assert re.fullmatch('[0-9a-f]{40}', identity['revision'])
+    actual = subprocess.check_output(['nix', 'hash', 'path', str(a.core)], text=True).strip()
+    assert actual == identity['narHash']
+    receipt['coreRevision'] = identity['revision']
+    receipt['coreSourceNar'] = actual
+else:
+    receipt['coreRevision'] = subprocess.check_output(['git', '-C', str(a.core), 'rev-parse', 'HEAD'], text=True).strip()
 
 
 def run(label, argv, cwd, environment=None, success=True, reason=None):
@@ -46,12 +61,29 @@ def run(label, argv, cwd, environment=None, success=True, reason=None):
     return result.stdout
 
 
+if a.archive is None:
+    # Capture the SDK's actual compiled JSON through a fresh genuine empty
+    # environment; CI never needs a prebuilt developer-machine archive.
+    arena = a.work / 'sdk-capture'
+    arena.mkdir()
+    bootstrap = arena / 'project'
+    bootstrap.mkdir()
+    (bootstrap / 'Gemfile').write_text('# SDK native payload capture\n')
+    inputs = arena / 'native-input-archives'
+    inputs.mkdir()
+    (inputs / 'inventory.tsv').write_text('')
+    run('bootstrap-native-empty-environment', [a.sdk / 'bin/ruby', root / 'tools/native_environment_v03_install.rb', bootstrap, inputs], bootstrap)
+    capture_env = dict(env, BUNDLER_PURIFIER_PROJECT_ROOTS='["json"]')
+    run('capture-sdk-native-json', [a.sdk / 'bin/ruby', root / 'tools/native_environment_exec.rb', bootstrap, a.sdk, '--', a.sdk / 'bin/ruby', '-r', a.core / 'tools/rubygems_codec.rb', root / 'tools/capture_gems.rb', arena / 'archives'], bootstrap, capture_env)
+    a.archive = arena / 'archives/json-1.1.3-x86_64-linux.gem'
+    assert a.archive.is_file()
+
 project = a.work / 'project'
 shutil.copytree(root / 'tests/fixtures/ruby183', project)
 (project / 'Gemfile').write_text('gem "json", "= 1.1.3"\n')
 (project / 'vendor/cache').mkdir(parents=True)
 shutil.copyfile(a.archive, project / 'vendor/cache/json-1.1.3-x86_64-linux.gem')
-cli = [a.ruby, root / 'bin/bundler-purifier']
+cli = [a.cli] if a.cli else [a.ruby, root / 'bin/bundler-purifier']
 run('capture', cli + ['lock'], project)
 lock = project / 'bundler-purifier.lock.json'
 original = lock.read_bytes()

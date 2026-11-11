@@ -295,12 +295,32 @@ jobs:
           python3 tests/prelock-input.py --provider "$RUNNER_TEMP/bundler08-native-evidence/project" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-input-evidence"
           python3 tests/prelock-relocation.py --project "$RUNNER_TEMP/bundler08-native-evidence/project" --cli "${prelock[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler08-relocation-evidence"
 
+      - name: Ruby 1.8.3 and Bundler 0.3 native frontend
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        run: |
+          native_paths=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby183-bundler031-sdk .#checks.x86_64-linux.ruby183-bundler031-cli .#checks.x86_64-linux.ruby184-bundler08-sdk)
+          mapfile -t native <<< "$native_paths"
+          test "${#native[@]}" -eq 3
+          test -x "${native[0]}/bin/ruby"
+          test -x "${native[1]}/bin/bundler-purifier"
+          test -x "${native[2]}/bin/gem-publish"
+          nix eval --impure --json --expr 'let f=builtins.getFlake (toString ./.); p=f.inputs.purifier; in { source=p.outPath; revision=p.rev; narHash=p.narHash; nixpkgs=f.inputs.nixpkgs.outPath; }' > "$RUNNER_TEMP/ruby183-context.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); json.dump({k:d[k] for k in ["revision","narHash"]},open(sys.argv[2],"w"))' "$RUNNER_TEMP/ruby183-context.json" "$RUNNER_TEMP/ruby183-core-identity.json"
+          core_source=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$RUNNER_TEMP/ruby183-context.json")
+          nixpkgs_source=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["nixpkgs"])' "$RUNNER_TEMP/ruby183-context.json")
+          python3 tests/prelock-v03-native.py --sdk "${native[0]}" --cli "${native[1]}/bin/bundler-purifier" --publisher-sdk "${native[2]}" --core "$core_source" --core-identity "$RUNNER_TEMP/ruby183-core-identity.json" --nixpkgs "$nixpkgs_source" --work "$RUNNER_TEMP/bundler031-native-evidence"
+          python3 tests/prelock-input.py --sdk-profile bundler031 --provider "$RUNNER_TEMP/bundler031-native-evidence/project" --cli "${native[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler031-input-evidence"
+
       - name: Retain historical incoming composition receipts
         if: always() && runner.os == 'Linux' && runner.arch == 'X64'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ruby18-incoming-composition
           path: |
+            ${{ runner.temp }}/bundler031-*-evidence/receipt.json
+            ${{ runner.temp }}/bundler031-*-evidence/logs/*
+            ${{ runner.temp }}/ruby183-context.json
+            ${{ runner.temp }}/ruby183-core-identity.json
             ${{ runner.temp }}/bundler08-*-evidence/receipt.json
             ${{ runner.temp }}/bundler08-*-evidence/logs/*
             ${{ runner.temp }}/bundler08-relocation-evidence/*.stdout
