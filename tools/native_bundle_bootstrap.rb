@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Activate the selected consumer SDK before loading its own executable.
+# Early CLI implementations snapshot ARGV while their file is required.
+# Remove the launcher's executable argument before loading native code.
+$0 = ARGV.shift
 require "rubygems"
 require "rubygems/user_interaction" unless defined?(Gem::SilentUI)
 gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0")
@@ -83,7 +86,6 @@ if !Bundler.respond_to?(:app_cache) && Bundler.respond_to?(:cache)
   end
 end
 
-$0 = ARGV.shift
 # These SDKs write their native lock as part of install, before a separate
 # lock command existed. Keep resolution and lock serialization native.
 legacy_install_lock = Bundler::Definition.respond_to?(:build) && !defined?(Bundler::SourceList)
