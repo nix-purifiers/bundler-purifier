@@ -81,7 +81,11 @@ let
         makeWrapper ${baseSdk}/bin/ruby "$out/bin/ruby" \
           --suffix GEM_PATH : ${codecGems}/gems --prefix RUBYOPT ' ' -rrubygems
         makeWrapper "$out/bin/ruby" "$out/bin/gem" --add-flags ${rubygems}/bin/gem
-        makeWrapper "$out/bin/ruby" "$out/bin/bundle" --add-flags ${codecGems}/gems/bin/bundle
+        # Pre-lockfile Bundler shipped only a RubyGems plugin. Preserve its
+        # genuine command surface instead of creating a dead bundle wrapper.
+        if [ -f ${codecGems}/gems/bin/bundle ]; then
+          makeWrapper "$out/bin/ruby" "$out/bin/bundle" --add-flags ${codecGems}/gems/bin/bundle
+        fi
       '';
 in
 {

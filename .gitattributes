@@ -1,0 +1,2 @@
+# Exact bytes 1..255 used by the native snapshot decoder; no text conversion.
+nix/lib/native-environment-byte-table binary
