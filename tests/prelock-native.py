@@ -70,6 +70,12 @@ try:
     assert b"Nix input state is not an owned directory" in (logs / "reject-linked-lock-parent.stderr").read_bytes()
 finally:
     (project / "linked-lock-parent").unlink()
+external_lock = args.work / "explicit-external" / "lock.json"
+external_lock.parent.mkdir()
+run("capture-explicit-external", [args.cli, "--lockfile", external_lock, "lock"], project)
+assert external_lock.is_file()
+run("prefetch-explicit-external", [args.cli, "--lockfile", external_lock, "prefetch"], project)
+assert "EXTERNAL|1.8.4" in run("runtime-explicit-external", [args.cli, "--lockfile", external_lock, "shell", "ruby", "-e", 'puts "EXTERNAL|#{RUBY_VERSION}"'], project)
 run("capture", [args.cli, "lock"], project)
 lock = project / "bundler-purifier.lock.json"
 original = lock.read_bytes()

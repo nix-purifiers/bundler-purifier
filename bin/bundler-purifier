@@ -341,7 +341,11 @@ module BundlerPurifier
       File.realpath(File.dirname(lockfile_path))
     end
     current = anchor
-    relative = expanded_state.delete_prefix(anchor + "/")
+    relative = if expanded_state.start_with?(project_root + "/")
+      expanded_state.delete_prefix(anchor + "/")
+    else
+      ".bundler-purifier"
+    end
     (relative.split("/") + ["inputs"]).each do |part|
       current = File.join(current, part)
       if File.exist?(current) || File.symlink?(current)

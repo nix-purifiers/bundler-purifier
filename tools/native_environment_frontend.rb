@@ -38,9 +38,15 @@ class PurifierNativeEnvironmentFrontend
   # particular, mkdir_p must never follow a vendor/state symlink outside it.
   def owned_directory(path, mode:, create: true)
     expanded = File.expand_path(path)
-    C.reject!("native directory escapes project role") unless expanded.start_with?(@root + "/")
-    relative = expanded.delete_prefix(@root + "/")
-    current = @root
+    anchor = @root
+    unless expanded.start_with?(@root + "/")
+      state = File.expand_path(@context.state_dir)
+      C.reject!("native directory escapes project role") unless expanded == state || expanded.start_with?(state + "/")
+      anchor = File.realpath(File.dirname(@lockfile))
+      expanded = File.join(anchor, ".bundler-purifier") + expanded.delete_prefix(state)
+    end
+    relative = expanded.delete_prefix(anchor + "/")
+    current = anchor
     relative.split("/").each do |part|
       current = File.join(current, part)
       if File.exist?(current) || File.symlink?(current)
