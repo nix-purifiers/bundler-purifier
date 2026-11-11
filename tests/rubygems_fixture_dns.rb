@@ -6,7 +6,7 @@ require "rubygems"
 require "rubygems/remote_fetcher"
 if ENV["PURIFIER_FIXTURE_DNS_PORT"] && Gem::RemoteFetcher.method_defined?(:api_endpoint)
   require "resolv"
-  dns = Resolv::DNS.new(:nameserver_port => [["127.0.0.1", Integer(ENV.fetch("PURIFIER_FIXTURE_DNS_PORT"))]],
+  dns = Resolv::DNS.new(:nameserver => ["127.0.0.1"], :nameserver_port => [["127.0.0.1", Integer(ENV.fetch("PURIFIER_FIXTURE_DNS_PORT"))]],
                         :search => [], :ndots => 1)
   # Ruby 1.9.1 predates nameserver_port configuration, but its genuine
   # connected UDP requester already accepts an explicit port. Select that
