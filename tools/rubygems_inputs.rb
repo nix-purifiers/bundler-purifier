@@ -202,6 +202,10 @@ module PurifierGemInputs
   def self.repository_path(remote)
     if remote.respond_to?(:parser) && remote.parser.respond_to?(:unescape)
       remote.parser.unescape(remote.path)
+    elsif defined?(Bundler::URI::DEFAULT_PARSER)
+      Bundler::URI::DEFAULT_PARSER.unescape(remote.path)
+    elsif defined?(Gem::URI::DEFAULT_PARSER)
+      Gem::URI::DEFAULT_PARSER.unescape(remote.path)
     elsif defined?(URI::DEFAULT_PARSER)
       URI::DEFAULT_PARSER.unescape(remote.path)
     else

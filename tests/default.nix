@@ -19,6 +19,8 @@
   lobsters,
   historicalRubySource,
   olderRubySource,
+  ruby2022Source,
+  ruby2025Source,
 }:
 let
   inherit (pkgs) lib;
@@ -425,6 +427,42 @@ in
       nativeBuildInputs = [ native21.compiler ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    ruby2022 = import ruby2022Source {
+      system = "x86_64-linux";
+      config = { };
+    };
+    ruby2025 = import ruby2025Source {
+      system = "x86_64-linux";
+      config.permittedInsecurePackages = [
+        "ruby-3.1.7"
+        "ruby-3.2.8"
+        "ruby-3.3.8"
+      ];
+    };
+    project30 = build {
+      src = ./fixtures/ruby30;
+      ruby = ruby2022.ruby_3_0;
+      nativeBuildInputs = [ ruby2022.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    project31 = build {
+      src = ./fixtures/ruby31;
+      ruby = ruby2025.ruby_3_1;
+      nativeBuildInputs = [ ruby2025.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    project32 = build {
+      src = ./fixtures/ruby32;
+      ruby = ruby2025.ruby_3_2;
+      nativeBuildInputs = [ ruby2025.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    project33 = build {
+      src = ./fixtures/ruby33;
+      ruby = ruby2025.ruby_3_3;
+      nativeBuildInputs = [ ruby2025.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     rubygems312Update = pkgs.fetchurl {
       url = "https://rubygems.org/downloads/rubygems-update-3.1.2.gem";
       hash = "sha256-e/5OXidBkeVtqNEnx53xDZEg/rhlDkutKSOPSydzpmE=";
@@ -497,6 +535,66 @@ in
       projectRuby = native21.sdk;
       projectNativeBuildInputs = [ native21.compiler ];
     };
+    ruby30-sdk = ruby2022.ruby_3_0;
+    ruby30-native-extension = project30.tests;
+    ruby30-app = project30.packages.app;
+    ruby30-repository = project30.release.projections.rubygems;
+    ruby30-cli = cli.override {
+      projectRuby = ruby2022.ruby_3_0;
+      projectNativeBuildInputs = [ ruby2022.stdenv.cc ];
+    };
+    ruby30-input-composition =
+      pkgs.runCommand "ruby30-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${ruby2022.ruby_3_0} ${project30.release.projections.rubygems} ${project30.release.projections.rubygems.catalog} 3.0.5 2.2.33
+          touch "$out"
+        '';
+    ruby31-sdk = ruby2025.ruby_3_1;
+    ruby31-native-extension = project31.tests;
+    ruby31-app = project31.packages.app;
+    ruby31-repository = project31.release.projections.rubygems;
+    ruby31-cli = cli.override {
+      projectRuby = ruby2025.ruby_3_1;
+      projectNativeBuildInputs = [ ruby2025.stdenv.cc ];
+    };
+    ruby31-input-composition =
+      pkgs.runCommand "ruby31-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${ruby2025.ruby_3_1} ${project31.release.projections.rubygems} ${project31.release.projections.rubygems.catalog} 3.1.7 2.3.27
+          touch "$out"
+        '';
+    ruby32-sdk = ruby2025.ruby_3_2;
+    ruby32-native-extension = project32.tests;
+    ruby32-app = project32.packages.app;
+    ruby32-repository = project32.release.projections.rubygems;
+    ruby32-cli = cli.override {
+      projectRuby = ruby2025.ruby_3_2;
+      projectNativeBuildInputs = [ ruby2025.stdenv.cc ];
+    };
+    ruby32-input-composition =
+      pkgs.runCommand "ruby32-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${ruby2025.ruby_3_2} ${project32.release.projections.rubygems} ${project32.release.projections.rubygems.catalog} 3.2.8 2.4.19
+          touch "$out"
+        '';
+    ruby33-sdk = ruby2025.ruby_3_3;
+    ruby33-native-extension = project33.tests;
+    ruby33-app = project33.packages.app;
+    ruby33-repository = project33.release.projections.rubygems;
+    ruby33-cli = cli.override {
+      projectRuby = ruby2025.ruby_3_3;
+      projectNativeBuildInputs = [ ruby2025.stdenv.cc ];
+    };
+    ruby33-input-composition =
+      pkgs.runCommand "ruby33-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${ruby2025.ruby_3_3} ${project33.release.projections.rubygems} ${project33.release.projections.rubygems.catalog} 3.3.8 2.5.22
+          touch "$out"
+        '';
     rubygems312-update = rubygems312Update;
     ruby26-sdk = historicalRubies.ruby_2_6;
     ruby26-native-extension = project26.tests;
