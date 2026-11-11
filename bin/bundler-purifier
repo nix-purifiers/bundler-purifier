@@ -480,7 +480,7 @@ module BundlerPurifier
       cache = File.expand_path(env["BUNDLE_CACHE_PATH"], root)
       text = File.read(gemfile_lock_path)
       if yaml_lock
-        @native_lock_snapshot = JSON.parse(capture!(env, File.join(lock_ruby_bindir, "ruby"),
+        @native_lock_snapshot = JSON.parse(capture!(env.merge("BUNDLER_PURIFIER_INPUT_VIEWS" => JSON.dump(@input_views)), File.join(lock_ruby_bindir, "ruby"),
           File.join(tools_dir, "native_lock_snapshot.rb")))
       end
       parser = lock_parser(text)

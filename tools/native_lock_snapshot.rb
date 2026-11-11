@@ -16,6 +16,12 @@ bytes = File.read(lock_path)
 raise "expected native YAML lock" unless bytes.lstrip.index("---") == 0
 # Definition::Locked supplies native source-index and dependency decoding;
 # Runtime supplies actual installed platform selection omitted by the lock.
+views = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_INPUT_VIEWS", "[]"))
+unless views.empty?
+  require File.expand_path("native_bundle", File.dirname(__FILE__))
+  ENV["BUNDLER_PURIFIER_INPUT_DATA"] = Marshal.dump(PurifierNativeBundle.packages_from_views(views)).unpack("H*").first
+  require File.expand_path("rubygems_inputs", File.dirname(__FILE__))
+end
 definition = Bundler.definition
 if Bundler.respond_to?(:env_file)
   environment = Bundler.env_file

@@ -33,16 +33,7 @@ module PurifierNativeBundle
     $?.success?
   end
 
-  def self.run(arguments, options)
-    root, views, ruby, bundle = options.values_at(:root, :views, :ruby, :bundle)
-    persist_lock = options.fetch(:persist_lock, false)
-    yaml_lock = options.fetch(:lock_format, "text") == "yaml"
-    env = options.fetch(:env, {})
-    working_directory = ENV.fetch("BUNDLER_PURIFIER_WORKING_DIRECTORY", root)
-    return native_system(env, bundle_command(ruby, bundle, arguments), :chdir => working_directory) if views.empty?
-
-    command = arguments.find { |argument| argument.index("-") != 0 }
-    env = env.merge("BUNDLER_PURIFIER_RUNTIME" => %w[exec console].include?(command) ? "1" : "0")
+  def self.packages_from_views(views)
     packages = {}
     views.each do |view|
       catalog = JSON.parse(File.read(view.fetch("catalog")))
@@ -59,6 +50,20 @@ module PurifierNativeBundle
         packages[name] = candidate
       end
     end
+    packages
+  end
+
+  def self.run(arguments, options)
+    root, views, ruby, bundle = options.values_at(:root, :views, :ruby, :bundle)
+    persist_lock = options.fetch(:persist_lock, false)
+    yaml_lock = options.fetch(:lock_format, "text") == "yaml"
+    env = options.fetch(:env, {})
+    working_directory = ENV.fetch("BUNDLER_PURIFIER_WORKING_DIRECTORY", root)
+    return native_system(env, bundle_command(ruby, bundle, arguments), :chdir => working_directory) if views.empty?
+
+    command = arguments.find { |argument| argument.index("-") != 0 }
+    env = env.merge("BUNDLER_PURIFIER_RUNTIME" => %w[exec console].include?(command) ? "1" : "0")
+    packages = packages_from_views(views)
     input_data = Marshal.dump(packages).unpack("H*").first
     if (persistent = ENV["BUNDLER_PURIFIER_PERSISTENT_GEMFILE"])
       native_env = env.merge("BUNDLE_GEMFILE" => persistent,
