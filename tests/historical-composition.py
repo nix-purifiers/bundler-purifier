@@ -72,6 +72,11 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
 require "digest/sha2"
 abort "resolver scope leaked" if Thread.current[:purifier_definition_sources]
 abort "wrong native parser" unless JSON.parser == JSON::Ext::Parser
+requirement = Gem.loaded_specs.fetch("json").required_ruby_version
+abort "current Ruby ABI rejected" unless requirement.satisfied_by?(Gem.ruby_version)
+next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
+abort "next Ruby ABI accepted" if requirement.satisfied_by?(next_release)
+abort "next Ruby preview ABI accepted" if requirement.satisfied_by?(Gem::Version.new(next_release.to_s + ".pre"))
 puts "RUNTIME|#{RUBY_VERSION}|#{RUBY_PATCHLEVEL}|#{Gem::VERSION}|#{Bundler::VERSION}"
 puts "VALUE|#{HistoricalGreeting.answer}"
 Gem.loaded_specs.values.each do |spec|

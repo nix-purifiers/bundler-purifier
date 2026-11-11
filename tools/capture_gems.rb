@@ -169,8 +169,10 @@ selected.values.each do |original|
       spec.required_ruby_version = if Gem.ruby_version.prerelease?
         Gem::Requirement.new("= #{Gem.ruby_version}")
       else
-        next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
-        Gem::Requirement.new(">= #{RUBY_VERSION}", "< #{next_release}")
+        # Native RubyGems 1.3 serializes a multi-part requirement as one
+        # invalid argument in the installed gemspec. Its pessimistic form
+        # round-trips and excludes the next release, including previews.
+        Gem::Requirement.new("~> #{RUBY_VERSION}.0")
       end
       if spec.respond_to?(:metadata)
         spec.metadata = spec.metadata.merge("nix-purifier-ruby-engine" => (defined?(RUBY_ENGINE) ? RUBY_ENGINE : "ruby"),
