@@ -52,6 +52,12 @@ deadline = time.monotonic() + 1800
 capture_server = None
 home = work / 'home'
 home.mkdir()
+if args.rubygems_version == '1.3.7':
+    # This native client predates NO_PROXY. Keep the loopback registry on
+    # the SDK's official no-proxy setting without changing Nix's network.
+    fixture_gem_config = home / '.gemrc'
+    fixture_gem_config.write_text('---\nhttp_proxy: :no_proxy\n')
+    receipt['fixtureGemConfigSha256'] = hashlib.sha256(fixture_gem_config.read_bytes()).hexdigest()
 temporary = work / 'tmp'
 temporary.mkdir()
 env = {key: value for key, value in os.environ.items() if not key.startswith(('BUNDLE_', 'GEM_', 'RUBY'))}
@@ -109,6 +115,9 @@ try:
         'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; puts [RUBY_VERSION,RUBY_PATCHLEVEL,Gem::VERSION,Bundler::VERSION,Gem.ruby,RbConfig::CONFIG.fetch("prefix")].join("|")'])
     version_fields = versions.strip().split('|')
     assert version_fields[:4] == [args.ruby_version, str(args.ruby_patchlevel), args.rubygems_version, args.bundler_version], versions
+    if args.rubygems_version == '1.3.7':
+        run('native-fixture-proxy-config', [args.sdk / 'bin/ruby', '-rrubygems', '-e',
+            'abort unless Gem.configuration[:http_proxy] == :no_proxy'])
     actual_ruby, actual_prefix = version_fields[4:]
     assert Path(actual_ruby).is_file()
     receipt['actualRubyExecutableSha256'] = hashlib.sha256(Path(actual_ruby).read_bytes()).hexdigest()

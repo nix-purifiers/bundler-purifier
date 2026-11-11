@@ -432,6 +432,7 @@ jobs:
             ${{ runner.temp }}/ruby27-incoming-evidence/consumer/lib/incoming_consumer.rb
             ${{ runner.temp }}/ruby27-incoming-evidence/consumer.nix
             ${{ runner.temp }}/ruby186-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby186-incoming-evidence/home/.gemrc
             ${{ runner.temp }}/ruby186-incoming-evidence/logs/*
             ${{ runner.temp }}/ruby186-incoming-evidence/consumer/Gemfile
             ${{ runner.temp }}/ruby186-incoming-evidence/consumer/Gemfile.lock
@@ -440,6 +441,7 @@ jobs:
             ${{ runner.temp }}/ruby186-incoming-evidence/consumer/lib/incoming_consumer.rb
             ${{ runner.temp }}/ruby186-incoming-evidence/consumer.nix
             ${{ runner.temp }}/ruby190-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby190-incoming-evidence/home/.gemrc
             ${{ runner.temp }}/ruby190-incoming-evidence/logs/*
             ${{ runner.temp }}/ruby190-incoming-evidence/consumer/Gemfile
             ${{ runner.temp }}/ruby190-incoming-evidence/consumer/Gemfile.lock
