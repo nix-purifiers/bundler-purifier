@@ -209,14 +209,16 @@ Bundler 0.3.1 artifact reports `Bundler::VERSION` as `0.5.0`.
 For example, run the selected CLI from your project directory:
 
 ```sh
-nix shell 'github:nix-purifiers/bundler-purifier#checks.x86_64-linux.ruby183-bundler031-cli'
+purifier=github:nix-purifiers/bundler-purifier
+nix shell "$purifier#checks.x86_64-linux.ruby183-bundler031-cli"
 bundler-purifier lock
 bundler-purifier prefetch
 bundler-purifier shell ruby -Ilib your_program.rb
 ```
 
 This path resolves the default context from pure-Ruby or precompiled gem
-archives from `vendor/cache`, an existing native cache, or declared Nix inputs. It does not compile source
+archives from `vendor/cache`, an existing native cache, or declared Nix
+inputs. It does not compile source
 extensions during resolution. `lock --input REFERENCE` declares a Nix input.
 Commit `bundler-purifier.lock.json` and the required vendored archives.
 These SDKs have no native `Gemfile.lock`; the purifier record captures the
@@ -240,15 +242,15 @@ RubyGems 1.0.1 cannot run the original Gemcutter publisher. Select its
 separately attested Ruby 1.8.4 / RubyGems 1.3.5 SDK when publishing:
 
 ```sh
+purifier=github:nix-purifiers/bundler-purifier
 publisher_sdk="$(nix build --no-link --print-out-paths \
-  'github:nix-purifiers/bundler-purifier#checks.x86_64-linux.ruby184-bundler08-sdk')"
+  "$purifier#checks.x86_64-linux.ruby184-bundler08-sdk")"
 bundler-purifier publish --publisher-sdk "$publisher_sdk"
 ```
 
 The publisher uses Gemcutter 0.3.0 and publisher-only `json_pure` 1.8.6.
 Its identity is recorded separately from the project's SDK in the local
-publication receipt. These are bounded SDK observations, with no claim
-that every intervening release or untested SDK combination is supported.
+publication receipt.
 
 ### An external build
 
