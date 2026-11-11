@@ -18,21 +18,22 @@ output = File.expand_path(ARGV.fetch(0))
 FileUtils.mkdir_p(output)
 provided = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_INPUT_VIEWS", "[]")).map do |view|
   JSON.parse(File.read(view.fetch("catalog"))).fetch("packages").map { |entry| [entry.fetch("name"), entry.fetch("version")] }
-end.flatten(1)
-owned = Hash[JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).map do |archive|
+end.inject([]) { |all, entries| all.concat(entries) }
+owned = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).inject({}) do |result, archive|
   spec = if Gem::Package.respond_to?(:new)
     Gem::Package.new(archive).spec
   else
     require "rubygems/format"
     Gem::Format.from_file_by_path(archive).spec
   end
-  [spec.name, spec.files]
-end]
+  result[spec.name] = spec.files
+  result
+end
 roots = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_PROJECT_ROOTS", "[]"))
 if roots.empty?
   roots = Bundler.definition.dependencies.reject do |dependency|
     dependency.groups.all? { |group| [:development, :test, :doc].include?(group) }
-  end.map(&:name)
+  end.map { |dependency| dependency.name }
 end
 roots -= ["bundler"]
 File.open(File.join(output, "roots.json"), "wb") { |file| file.write(JSON.dump(roots.sort) + "\n") }
@@ -51,7 +52,7 @@ else
   raise "bundler-purifier: native environment missing; run native install and lock" unless defined?(Bundler::SPECS)
   Bundler::SPECS
 end
-specs = Hash[runtime_specs.to_a.map { |spec| [spec.name, spec] }]
+specs = runtime_specs.to_a.inject({}) { |result, spec| result[spec.name] = spec; result }
 selected = {}
 visit = lambda do |name|
   return if selected.key?(name) || name == "bundler" || !specs.key?(name)
@@ -63,7 +64,7 @@ archives = []
 intrinsics = []
 selected.values.each do |original|
   next if original.name == "bundler" || provided.include?([original.name, original.version.to_s])
-  if original.full_gem_path.start_with?(RbConfig::CONFIG.fetch("prefix") + "/")
+  if (original.full_gem_path.index(RbConfig::CONFIG.fetch("prefix") + "/") == 0)
     intrinsics << { "name" => original.name, "version" => original.version.to_s,
                     "sdk" => RbConfig::CONFIG.fetch("prefix"), "ruby" => RUBY_VERSION,
                     "system" => Gem::Platform.local.to_s,
@@ -81,7 +82,7 @@ selected.values.each do |original|
       paths.map do |path|
         if path == source
           "."
-        elsif path.start_with?(source + "/")
+        elsif (path.index(source + "/") == 0)
           path.sub(/\A#{Regexp.escape(source + "/")}/, "")
         else
           path
@@ -90,13 +91,13 @@ selected.values.each do |original|
     end
     require_paths = relative_paths.call(original.require_paths)
     runtime_paths = (require_paths + relative_paths.call([original.bindir])).reject do |path|
-      path.start_with?("/") || path == "." || path.split("/").include?("..")
+      (path.index("/") == 0) || path == "." || path.split("/").include?("..")
     end
     files += Dir.chdir(source) do
-      runtime_paths.map { |path| Dir.glob(File.join(path, "**", "*"), File::FNM_DOTMATCH) }.flatten(1)
+      runtime_paths.map { |path| Dir.glob(File.join(path, "**", "*"), File::FNM_DOTMATCH) }.inject([]) { |all, entries| all.concat(entries) }
     end
     files.uniq.each do |relative|
-      next if relative.start_with?("/") || (relative.split("/") & ["..", ".git"]).any?
+      next if (relative.index("/") == 0) || (relative.split("/") & ["..", ".git"]).any?
       input = File.join(source, relative)
       next unless File.file?(input)
       target = File.join(directory, relative)
@@ -111,9 +112,9 @@ selected.values.each do |original|
         inputs = roots.map do |root|
           exact = File.join(root, relative)
           File.file?(exact) ? [exact] : Dir.glob(File.join(root, "**", relative))
-        end.flatten(1).uniq
+        end.inject([]) { |all, entries| all.concat(entries) }.uniq
         inputs.each do |input|
-          sdk_root = roots.find { |root| input.start_with?(root + "/") }
+          sdk_root = roots.find { |root| (input.index(root + "/") == 0) }
           target = File.join(directory, "lib", input.sub(/\A#{Regexp.escape(sdk_root + "/")}/, ""))
           FileUtils.mkdir_p(File.dirname(target))
           copy_runtime_file(input, target)
@@ -158,7 +159,7 @@ selected.values.each do |original|
       original.dup
     end
     spec.extensions = []
-    spec.require_paths = require_paths.reject { |path| path.start_with?("/") }
+    spec.require_paths = require_paths.reject { |path| (path.index("/") == 0) }
     spec.require_paths = ["lib"] if spec.require_paths.empty?
     if native
       spec.platform = Gem::Platform.local

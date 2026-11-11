@@ -814,6 +814,27 @@ module BundlerPurifier
     fail!("the release holds no gem file") if gems.empty?
     host_index = args.index("--host")
     host = host_index ? args.fetch(host_index + 1) : (args.find { |arg| arg.start_with?("--host=") }&.delete_prefix("--host=") || ENV["RUBYGEMS_HOST"] || Gem.host)
+    push_environment = { "PATH" => user_ruby_path }
+    push_arguments = args
+    if host_index || args.any? { |arg| arg.start_with?("--host=") }
+      native_help = capture!(push_environment, "gem", "help", "push")
+      unless native_help.match?(/--host(?:[ =]|$)/)
+        # Early RubyGems selects the same destination through its native
+        # RUBYGEMS_HOST setting, before it gained the --host CLI option.
+        push_environment["RUBYGEMS_HOST"] = host
+        push_arguments = []
+        skip_value = false
+        args.each do |arg|
+          if skip_value
+            skip_value = false
+          elsif arg == "--host"
+            skip_value = true
+          elsif !arg.start_with?("--host=")
+            push_arguments << arg
+          end
+        end
+      end
+    end
     gems.each do |gem|
       if composed
         fetcher = Gem::RemoteFetcher.fetcher
@@ -827,7 +848,7 @@ module BundlerPurifier
           next
         end
       end
-      run!({ "PATH" => user_ruby_path }, "gem", "push", gem, *args, chdir: root)
+      run!(push_environment, "gem", "push", gem, *push_arguments, chdir: root)
     end
   end
 

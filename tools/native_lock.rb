@@ -9,7 +9,7 @@ module PurifierNativeLock
   KEYS = %w[gemSources gitSources pathSources checksums bundledWith rubyVersion].sort.freeze
 
   def self.yaml?(text)
-    text.lstrip.start_with?("---")
+    text.lstrip.index("---") == 0
   end
 
   def self.reject!(reason)

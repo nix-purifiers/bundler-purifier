@@ -561,6 +561,29 @@ in
       nativeBuildInputs = [ historicalRubies.stdenv.cc ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    runtime186 = import ./early-ruby-runtime.nix {
+      inherit pkgs olderRubySource;
+      rubyVersion = "1.8.6";
+      patchlevel = 420;
+      sourceHash = "sha256-EY5vJK/OjooQ3O0jY1Fo5Y2myRIaIfEgyC9CXUCh4yE=";
+      legacySSL = true;
+    };
+    native186 = import ./ruby18-sdk.nix {
+      inherit pkgs olderRubySource;
+      rubyPackage = runtime186;
+      rubyVersion = "1.8.6";
+      runtimeName = "ruby186-native";
+      rubygemsVersion = "1.3.7";
+      rubygemsHash = "sha256-r319QIUFHxE6H7qCLJumQc9S6eup+0MRzbzWvm3Q6Aw=";
+      bundlerVersion = "1.0.22";
+      bundlerHash = "sha256-wOcoWqMSJAdHs6Ox3ll4agSVCkJA7GyWudDv3VjU7EM=";
+    };
+    project186 = build {
+      src = ./fixtures/ruby186;
+      ruby = native186.sdk;
+      nativeBuildInputs = [ native186.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     runtime191 = import ./early-ruby-runtime.nix {
       inherit pkgs olderRubySource;
       rubyVersion = "1.9.1";
@@ -848,6 +871,22 @@ in
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${historicalRubies.ruby_2_7} ${project27.release.projections.rubygems} ${project27.release.projections.rubygems.catalog} 2.7.1 2.1.4
           touch $out
+        '';
+    rubygems137-update = native186.rubygemsUpdate;
+    ruby186-sdk = native186.sdk;
+    ruby186-app = project186.packages.app;
+    ruby186-native-extension = project186.tests;
+    ruby186-repository = project186.release.projections.rubygems;
+    ruby186-cli = cli.override {
+      projectRuby = native186.sdk;
+      projectNativeBuildInputs = [ native186.compiler ];
+    };
+    ruby186-input-composition =
+      pkgs.runCommand "ruby186-native-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native186.sdk} ${project186.release.projections.rubygems} ${project186.release.projections.rubygems.catalog} 1.8.6 1.0.22 --versionless --rubygems-version 1.3.7 --no-ruby-dsl
+          touch "$out"
         '';
     ruby191-sdk = native191.sdk;
     ruby191-app = project191.packages.app;

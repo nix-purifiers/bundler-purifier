@@ -364,6 +364,7 @@ in build {
         assert update is not None and update.is_file()
         update_bytes = update.read_bytes()
         update_hashes = {
+            '1.3.7': 'af7d7d4085051f113a1fba822c9ba641cf52e9eba9fb4311cdbcd6be6dd0e80c',
             '1.8.30': 'e9f5e3052c5db8d1bf77c2a65047ed5bd9977b73c0ed908c406610210591854c',
             '2.7.6': 'ee5ef219ac97f5499c31e6071eae424c3265620ece33b5cc66e09fa30f22086a',
             '3.1.2': '7bfe4e5e274191e56da8d127c79df10d9120feb8650e4bad29238f4b2773a661',
