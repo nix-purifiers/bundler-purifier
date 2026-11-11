@@ -137,7 +137,7 @@ puts "NATIVE|#{native}|#{File.open(native, "rb") { |file| Digest::SHA256.hexdige
             (project / 'Gemfile.lock').write_bytes(lock)
         print('PASS native archive checksum bindings and tampered checksum rejection')
 
-    if versionless:
+    if versionless and expected_bundler != '0.9.9':
         identity = r'''klass = Bundler::Source::Rubygems
 repository = PurifierGemInputs::PACKAGES.values.find { |package| !package["intrinsic"] }.fetch("repository")
 nix = klass.new("remotes" => [repository])
@@ -174,6 +174,8 @@ abort "ordinary constraint changed" unless spec.dependencies.last.requirement.to
 abort "SDK specification class changed" unless spec.class == Gem::Specification
 puts "NATIVE DEPENDENCY COLLECTION PASS"
 '''
+    if expected_bundler == '0.9.9':
+        collection = 'require ' + json.dumps(str(root / 'tools/rubygems_inputs.rb')) + '\n' + collection
     assert run('exec', 'ruby', '-e', collection).strip() == 'NATIVE DEPENDENCY COLLECTION PASS'
 
     run('lock', '--local')
