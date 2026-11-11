@@ -4,12 +4,17 @@
 require "rubygems"
 require "pathname"
 require "digest/sha2"
-gem "bundler", "= 0.8.1"
+artifact_version = ARGV[1] || "0.8.1"
+json_version = ARGV[2] || "1.8.6"
+raise "unsupported SDK activation profile" unless [["0.8.1", "1.8.6"], ["0.3.1", "1.1.3"]].include?([artifact_version, json_version])
+gem "bundler", "= " + artifact_version
 require "bundler"
-gem "json", "= 1.8.6"
+gem "json", "= " + json_version
 require "json"
 raise "native SDK requires C JSON" unless JSON.parser == JSON::Ext::Parser
 
+rubygems_name = defined?(Gem::VERSION) ? "Gem::VERSION" : "Gem::RubyGemsVersion"
+rubygems_version = defined?(Gem::VERSION) ? Gem::VERSION : Gem::RubyGemsVersion
 config = defined?(RbConfig) ? RbConfig::CONFIG : Config::CONFIG
 gem_library = $LOAD_PATH.map { |path| File.join(path, "rubygems.rb") }.detect { |path| File.file?(path) }
 raise "native RubyGems library not found" unless gem_library
@@ -17,7 +22,7 @@ real = lambda { |path| Pathname.new(path).realpath.to_s }
 executable = real.call("/proc/self/exe")
 components = [
   {"name" => "ruby", "version" => RUBY_VERSION, "library" => real.call(config["prefix"])},
-  {"name" => "rubygems", "version" => Gem::VERSION, "library" => real.call(File.dirname(File.dirname(gem_library)))}
+  {"name" => "rubygems", "version" => rubygems_version, "library" => real.call(File.dirname(File.dirname(gem_library)))}
 ]
 ["bundler", "json"].each do |name|
   spec = Gem.loaded_specs[name]
@@ -48,5 +53,5 @@ puts JSON.generate({
   "interpreter" => "sha256-" + [Digest::SHA256.digest(File.open(executable, "rb") { |file| file.read })].pack("m").delete("\n"),
   "components" => components,
   "clientReport" => {"name" => "Bundler::VERSION", "value" => Bundler::VERSION},
-  "rubygemsReport" => {"name" => "Gem::VERSION", "value" => Gem::VERSION}
+  "rubygemsReport" => {"name" => rubygems_name, "value" => rubygems_version}
 })

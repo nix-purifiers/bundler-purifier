@@ -111,7 +111,8 @@ class PurifierNativeEnvironmentFrontend
         declared << entry.merge("sha256" => sha256, "reference" => @inputs.fetch(index).fetch("reference"))
       end
     end
-    ["vendor/cache", "vendor/gems/ruby/#{@identity.fetch('abi')}/cache"].each do |relative|
+    cache = P.legacy?(@identity) ? "vendor/gems/cache" : "vendor/gems/ruby/#{@identity.fetch('abi')}/cache"
+    ["vendor/cache", cache].each do |relative|
       Dir.glob(File.join(@root, relative, "*.gem")).sort.each do |path|
         real = File.realpath(path)
         C.reject!("native cache escapes project role") unless real.start_with?(@root + "/") && File.file?(real)
@@ -135,7 +136,11 @@ class PurifierNativeEnvironmentFrontend
         else
           filename = File.basename(package.fetch("installedPath")) + ".gem"
           specification = File.join(workspace, package.fetch("specificationPath"))
-          source = File.join(File.dirname(File.dirname(specification)), "cache", filename)
+          source = if P.legacy?(@identity)
+            available.find { |entry| entry.fetch("sha256") == package.fetch("archiveHash") }.fetch("path")
+          else
+            File.join(File.dirname(File.dirname(specification)), "cache", filename)
+          end
           relative = File.join("vendor/cache", filename)
           vendor(source, relative, package.fetch("archiveHash"))
           {"kind" => "vendored", "path" => relative}
@@ -225,23 +230,33 @@ class PurifierNativeEnvironmentFrontend
 
   def publish(arguments)
     read
-    publisher = File.join(@sdk, "bin/gem-publish")
-    C.reject!("native SDK has no identity-bound publisher launcher") unless File.executable?(publisher) &&
-      @identity.fetch("components").any? { |component| component.fetch("name") == "gemcutter" && component.fetch("version") == "0.3.0" }
+    options = arguments.dup
+    selected_publisher = @context.take_option(options, "--publisher-sdk")
+    publisher_sdk = selected_publisher ? File.realpath(selected_publisher) : @sdk
+    publisher_identity = selected_publisher ? S.attest(publisher_sdk) : @identity
+    publisher = File.join(publisher_sdk, "bin/gem-publish")
+    C.reject!("native SDK has no identity-bound publisher launcher; select an attested publisher with --publisher-sdk") unless File.executable?(publisher) &&
+      publisher_identity.fetch("components").any? { |component| component.fetch("name") == "gemcutter" && component.fetch("version") == "0.3.0" }
+    # The original Gemcutter guard requires Gem135. This is a separate actual
+    # SDK context; it never changes the project's Gem101 consumer identity.
+    C.reject!("unsupported native publisher interface") unless publisher_identity.fetch("rubygemsReport") == {"name" => "Gem::VERSION", "value" => "1.3.5"}
     output = S.run("nix-build", File.join(@context.lib_dir, "realize.nix"), "-A", "release.projections.rubygems", *realize_args,
                    "--no-out-link", cwd: @root, deadline_seconds: 3600, stream_stderr: true).strip
     files = Dir.glob(File.join(output, "gems/*.gem")).sort
     C.reject!("native release has no projected archives") if files.empty?
-    options = arguments.dup
     explicit_host = @context.take_option(options, "--host")
     environment = S.clean_environment
     environment["GEMCUTTER_URL"] = explicit_host if explicit_host
-    descriptor = JSON.parse(File.binread(File.join(@sdk, "share/bundler-purifier/sdk-components.json")))
+    descriptor = JSON.parse(File.binread(File.join(publisher_sdk, "share/bundler-purifier/sdk-components.json")))
     component = descriptor.fetch("components").find { |entry| entry.fetch("name") == "gemcutter" }
     publisher_home = File.dirname(File.dirname(component.fetch("library")))
-    host = S.run(File.join(@sdk, "bin/ruby"), "-e",
+    host = S.run(File.join(publisher_sdk, "bin/ruby"), "-e",
                  'require "rubygems/command_manager";puts Gem::CommandManager.instance["push"].gemcutter_url',
                  env: environment.merge("GEM_PATH" => publisher_home)).strip
+    publication = {"version" => 1, "complete" => false,
+      "consumerSdkHash" => C.hash_bytes(JSON.generate(S.normalized_identity(@identity))),
+      "publisherSDK" => publisher_identity, "repository" => output,
+      "archives" => files.map { |file| {"file" => File.basename(file), "sha256" => C.hash_file(file)} }}
     files.each do |file|
       fetcher = Gem::RemoteFetcher.fetcher
       url = host.delete_suffix("/") + "/gems/" + File.basename(file)
@@ -255,5 +270,9 @@ class PurifierNativeEnvironmentFrontend
       end
       S.run(publisher, "push", file, *options, env: environment, cwd: @root, stream_stderr: true)
     end
+    publication["complete"] = true
+    publication["contentHash"] = C.content_hash(publication)
+    owned_directory(@context.state_dir, mode: 0700)
+    atomic_write(File.join(@context.state_dir, "native-publication.json"), JSON.generate(C.canonical(publication)) + "\n")
   end
 end

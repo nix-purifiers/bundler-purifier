@@ -61,7 +61,12 @@ let
       "platform"
     ]
     && (
-      if item.ruby == "1.8.4" then
+      if
+        builtins.elem item.ruby [
+          "1.8.3"
+          "1.8.4"
+        ]
+      then
         item.patchlevel == null
       else
         builtins.isInt item.patchlevel && item.patchlevel >= -1 && item.patchlevel <= 1000000
@@ -89,21 +94,43 @@ let
     ]
     && component item.clientArtifact
     && item.clientArtifact.name == "bundler"
-    && item.clientArtifact.version == "0.8.1"
     && lib.elem item.clientArtifact item.components
     && report item.clientReport
-    &&
-      item.clientReport == {
-        name = "Bundler::VERSION";
-        value = "0.8.1";
-      }
     && report item.rubygemsReport
-    &&
-      item.rubygemsReport == {
-        name = "Gem::VERSION";
-        value = "1.3.5";
-      }
-    && lib.any (entry: entry.name == "rubygems" && entry.version == "1.3.5") item.components;
+    && (
+      (
+        item.clientArtifact.version == "0.8.1"
+        &&
+          item.clientReport == {
+            name = "Bundler::VERSION";
+            value = "0.8.1";
+          }
+        &&
+          item.rubygemsReport == {
+            name = "Gem::VERSION";
+            value = "1.3.5";
+          }
+        && lib.any (entry: entry.name == "rubygems" && entry.version == "1.3.5") item.components
+        && lib.any (entry: entry.name == "json" && entry.version == "1.8.6") item.components
+      )
+      || (
+        item.clientArtifact.version == "0.3.1"
+        && item.ruby == "1.8.3"
+        &&
+          item.clientReport == {
+            name = "Bundler::VERSION";
+            value = "0.5.0";
+          }
+        &&
+          item.rubygemsReport == {
+            name = "Gem::RubyGemsVersion";
+            value = "1.0.1";
+          }
+        && lib.any (entry: entry.name == "rubygems" && entry.version == "1.0.1") item.components
+        && lib.any (entry: entry.name == "json" && entry.version == "1.1.3") item.components
+      )
+    );
+
   clauses = items: list items && items != [ ] && lib.all scalar items && unique items;
   dependency =
     item:
@@ -114,20 +141,35 @@ let
       "development"
     ]
     && clauses item.requirements;
+  legacy = (value.interface or null) == "environment-v03";
+  executable =
+    name:
+    builtins.isString name
+    && builtins.match "[A-Za-z0-9_.-]+" name != null
+    && !(lib.elem name [
+      "."
+      ".."
+    ]);
   package =
     item:
-    exact [
-      "name"
-      "version"
-      "platform"
-      "dependencies"
-      "archiveHash"
-      "installedPath"
-      "specificationPath"
-      "requirePaths"
-      "bindir"
-      "sourceKind"
-    ] item
+    exact (
+      [
+        "name"
+        "version"
+        "platform"
+        "dependencies"
+        "archiveHash"
+        "installedPath"
+        "specificationPath"
+        "requirePaths"
+        "bindir"
+        "sourceKind"
+      ]
+      ++ lib.optional legacy "executables"
+    ) item
+    && (
+      !legacy || (list item.executables && lib.all executable item.executables && unique item.executables)
+    )
     && lib.all (key: scalar item.${key}) [
       "name"
       "version"
@@ -139,7 +181,7 @@ let
     && list item.requirePaths
     && lib.all (path: path == "." || relative path) item.requirePaths
     && (item.bindir == null || item.bindir == "." || relative item.bindir)
-    && item.sourceKind == "verified-cache"
+    && item.sourceKind == (if legacy then "verified-input" else "verified-cache")
     && list item.dependencies
     && lib.all dependency item.dependencies
     && unique (
@@ -185,7 +227,7 @@ let
       in
       map (dep: { key = dep.name; }) (lib.filter (dep: dep.type == "runtime") selected.dependencies);
   };
-  prefix = "vendor/gems/ruby/${value.sdk.abi}/";
+  prefix = if legacy then "vendor/gems/" else "vendor/gems/ruby/${value.sdk.abi}/";
   packageRole =
     item:
     let
@@ -194,21 +236,29 @@ let
     lib.hasPrefix (prefix + "gems/") item.installedPath
     && !(lib.hasInfix "/" suffix)
     && item.specificationPath == prefix + "specifications/" + suffix + ".gemspec";
-  requiredSnapshots = [
-    "vendor/gems/environment.rb"
-    (prefix + "environment.rb")
-  ]
-  ++ lib.concatMap (
-    item:
-    [ item.specificationPath ]
-    ++ lib.optional (
-      item.requirePaths != [ "lib" ]
-      || !(lib.elem item.bindir [
-        null
-        "bin"
-      ])
-    ) (item.installedPath + "/.require_paths")
-  ) value.packages;
+  wrappers = if legacy then lib.concatMap (item: item.executables) value.packages else [ ];
+  requiredSnapshots =
+    (
+      if legacy then
+        [ "vendor/gems/environments/default.rb" ]
+      else
+        [
+          "vendor/gems/environment.rb"
+          (prefix + "environment.rb")
+        ]
+    )
+    ++ map (name: "vendor/gems/bin/" + name) wrappers
+    ++ lib.concatMap (
+      item:
+      [ item.specificationPath ]
+      ++ lib.optional (
+        item.requirePaths != [ "lib" ]
+        || !(lib.elem item.bindir [
+          null
+          "bin"
+        ])
+      ) (item.installedPath + "/.require_paths")
+    ) value.packages;
   valid =
     exact [
       "format"
@@ -229,7 +279,10 @@ let
     && value.format == "bundler-native-environment"
     && builtins.isInt value.schemaVersion
     && value.schemaVersion == 1
-    && value.interface == "environment-v08"
+    && lib.elem value.interface [
+      "environment-v08"
+      "environment-v03"
+    ]
     && value.nativeLockFile == null
     && value.contexts == [ "default" ]
     && value.bindingAlgorithm == "declared-runtime-requirements-v1"
@@ -241,6 +294,8 @@ let
         sum: item: sum + builtins.stringLength item.name + builtins.stringLength item.version + 2
       ) 0 value.bindings <= 1048576
     && sdk value.sdk
+    && value.sdk.clientArtifact.version == (if legacy then "0.3.1" else "0.8.1")
+    && unique wrappers
     &&
       lib.all
         (
