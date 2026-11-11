@@ -179,13 +179,14 @@ jobs:
               --results "$RUNNER_TEMP/ruby${point}-incoming-evidence"
           done
 
-      - name: Stock Ruby 2.6 and 2.7 native incoming composition
+      - name: Ruby 2.5 through 2.7 native incoming composition
         if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
         run: |
           update=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.rubygems312-update)
-          for point in 26 27; do
+          for point in 25 26 27; do
             case "$point" in
+              25) version=2.5.8; patchlevel=224; bundler=2.0.2; hash='sha256-TCrh/OigcrgyrHGI8eUwp8/48KadipYhsy0UB9sAotA=' ;;
               26) version=2.6.6; patchlevel=146; bundler=1.17.2; hash='sha256-uVQDjiLiMsyU/rMjGH5CGUtO1uFqFxKzflvWAY7BdjU=' ;;
               27) version=2.7.1; patchlevel=83; bundler=2.1.4; hash='sha256-UAFNIdZxIHnaTWRk3hK7k8J4+HySANC2C6mfMsJa9Ik=' ;;
             esac
@@ -358,6 +359,14 @@ jobs:
             ${{ runner.temp }}/ruby41-incoming-evidence/consumer/incoming_consumer.gemspec
             ${{ runner.temp }}/ruby41-incoming-evidence/consumer/lib/incoming_consumer.rb
             ${{ runner.temp }}/ruby41-incoming-evidence/consumer.nix
+            ${{ runner.temp }}/ruby25-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby25-incoming-evidence/logs/*
+            ${{ runner.temp }}/ruby25-incoming-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby25-incoming-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby25-incoming-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby25-incoming-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby25-incoming-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby25-incoming-evidence/consumer.nix
             ${{ runner.temp }}/ruby26-incoming-evidence/receipt.json
             ${{ runner.temp }}/ruby26-incoming-evidence/logs/*
             ${{ runner.temp }}/ruby26-incoming-evidence/consumer/Gemfile

@@ -454,7 +454,8 @@ module BundlerPurifier
       if yaml_lock || native_sdk.fetch("lockCommand") == "install"
         native_bundle!(env, "cache", persist_lock: true)
       else
-        cache_command = locked_bundler && locked_bundler < Gem::Version.new("2.0") ? "package" : "cache"
+        # Bundler 2.0 keeps --no-install on package, not its older cache command.
+        cache_command = locked_bundler && locked_bundler < Gem::Version.new("2.1") ? "package" : "cache"
         native_bundle!(env, cache_command, "--all-platforms", "--no-install", persist_lock: true)
       end
       cache = File.expand_path(env["BUNDLE_CACHE_PATH"], root)
