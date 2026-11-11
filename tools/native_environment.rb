@@ -36,6 +36,10 @@ module PurifierNativeEnvironment
     "sha256-#{Base64.strict_encode64(Digest::SHA256.digest(bytes))}"
   end
 
+  def self.hash_file(path)
+    "sha256-#{Base64.strict_encode64(Digest::SHA256.file(path).digest)}"
+  end
+
   def self.content_hash(document)
     hash_bytes(JSON.generate(canonical(document.reject { |key, _| key == "contentHash" })))
   end
@@ -95,11 +99,21 @@ module PurifierNativeEnvironment
   end
 
   def self.sdk!(value)
-    exact!(value, %w[ruby patchlevel abi platform interpreter components clientArtifact clientReport rubygemsReport], "native SDK")
+    exact!(value, %w[ruby patchlevel abi platform interpreter components clientArtifact clientReport rubygemsReport closure], "native SDK")
     %w[ruby abi platform].each { |key| scalar!(value.fetch(key), key) }
     patch = value.fetch("patchlevel")
     reject!("invalid native patchlevel") unless value.fetch("ruby") == "1.8.4" ? patch.nil? : (patch.is_a?(Integer) && patch.between?(-1, 1_000_000))
     digest!(value.fetch("interpreter"))
+    closure = value.fetch("closure")
+    list!(closure, "SDK runtime closure")
+    reject!("missing SDK runtime closure") if closure.empty?
+    closure.each do |entry|
+      exact!(entry, %w[path narHash], "SDK runtime closure entry")
+      scalar!(entry.fetch("path"), "SDK runtime path")
+      reject!("invalid SDK runtime path") unless entry.fetch("path").match?(%r{\A/nix/store/[a-z0-9]{32}-[^/]+\z})
+      digest!(entry.fetch("narHash"))
+    end
+    unique!(closure.map { |entry| entry.fetch("path") }, "SDK runtime closure entry")
     components = value.fetch("components")
     list!(components, "SDK component")
     reject!("missing SDK components") if components.empty?
@@ -219,6 +233,7 @@ module PurifierNativeEnvironment
     normalize = lambda do |record|
       result = JSON.parse(JSON.generate(record))
       result.fetch("sdk").fetch("components").sort_by! { |component| component.fetch("name") }
+      result.fetch("sdk").fetch("closure").sort_by! { |entry| entry.fetch("path") }
       %w[manifests snapshots].each { |key| result.fetch(key).sort_by! { |item| item.fetch("path") } }
       result.fetch("packages").each do |package|
         package.fetch("dependencies").each { |dependency| dependency.fetch("requirements").sort! }

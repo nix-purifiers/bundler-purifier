@@ -53,6 +53,7 @@ let
       "clientArtifact"
       "clientReport"
       "rubygemsReport"
+      "closure"
     ] item
     && lib.all (key: scalar item.${key}) [
       "ruby"
@@ -66,6 +67,16 @@ let
         builtins.isInt item.patchlevel && item.patchlevel >= -1 && item.patchlevel <= 1000000
     )
     && digest item.interpreter
+    && list item.closure
+    && item.closure != [ ]
+    && lib.all (
+      entry:
+      exact [ "path" "narHash" ] entry
+      && scalar entry.path
+      && builtins.match "/nix/store/[a-z0-9]{32}-[^/]+" entry.path != null
+      && digest entry.narHash
+    ) item.closure
+    && unique (map (entry: entry.path) item.closure)
     && list item.components
     && item.components != [ ]
     && lib.all component item.components

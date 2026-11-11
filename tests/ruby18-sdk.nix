@@ -89,7 +89,15 @@ let
       '';
 in
 {
-  inherit sdk rubygemsUpdate;
+  inherit
+    sdk
+    rubygemsUpdate
+    ruby
+    rubygems
+    baseSdk
+    bundlerGem
+    jsonGem
+    ;
   gems = codecGems;
   compiler = (old.stdenv.cc or old.stdenv.gcc);
 }

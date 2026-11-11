@@ -77,8 +77,41 @@ module PurifierEnvironmentObservation
       archive = File.join(repository, "cache", spec.full_name + ".gem")
       within(root, archive)
       require "rubygems/format"
-      cached = Gem::Format.from_file_by_path(archive).spec
+      cached_archive = Gem::Format.from_file_by_path(archive)
+      cached = cached_archive.spec
       fail!("native archive and selected specification disagree") unless identity(cached) == identity(spec)
+      fail!("native installed specification metadata differs from archive") unless cached.to_ruby == spec.to_ruby
+      # Initial cached profile accepts pure or already-projected payloads.
+      # Source extension builds need a separate compiler/output attestation.
+      fail!("native source extension builds require compiler attestation") unless cached.extensions.empty?
+      payload_names = {}
+      installed_root = Pathname.new(spec.full_gem_path).realpath.to_s
+      cached_archive.file_entries.each do |entry, bytes|
+        # Native Gem::Format returns nil for a zero-byte tar entry; its
+        # installer writes that as an empty file on the original runtime.
+        bytes = "" if bytes.nil? && entry["size"] == 0
+        fail!("native archive payload size is invalid") unless bytes.is_a?(String) && bytes.size == entry["size"]
+        relative = entry["path"]
+        fail!("invalid native archive payload path") unless relative.is_a?(String) && !relative.empty? && relative[0, 1] != "/" && relative.index("\\").nil? && relative.split("/").all? { |part| !part.empty? && part != ".." }
+        # Use the same public expansion API as native Installer#extract_files;
+        # upstream JSON genuinely includes ./tests/... payload names.
+        payload = File.expand_path(File.join(spec.full_gem_path, relative))
+        fail!("native archive path escapes installed package") unless payload.index(installed_root + "/") == 0
+        payload_identity = [entry["mode"], Digest::SHA256.digest(bytes)]
+        # Genuine JSON includes byte/mode-identical ./tests and tests aliases.
+        # Preserve the archive identity; conflicting aliases fail closed.
+        fail!("conflicting native archive payload aliases") if payload_names[payload] && payload_names[payload] != payload_identity
+        payload_names[payload] = payload_identity
+        within(root, payload)
+        physical = Pathname.new(payload).realpath.to_s
+        fail!("native payload escapes installed package role") unless physical.index(installed_root + "/") == 0 && File.file?(physical)
+        fail!("native installed payload differs from archive") unless File.open(physical, "rb") { |file| Digest::SHA256.digest(file.read) } == Digest::SHA256.digest(bytes)
+        # Genuine RubyGems 1.3.5 Installer#generate_bin adds executable bits
+        # to the declared entry point inside the installed gem itself.
+        executable = cached.executables.any? { |name| relative == File.join(cached.bindir, name) }
+        expected_mode = entry["mode"] | (executable ? 0111 : 0)
+        fail!("native payload executable mode differs from SDK installation") unless (File.stat(physical).mode & 0111) == (expected_mode & 0111)
+      end
       spec.dependencies.each do |dependency|
         next unless dependency.type == :runtime
         selected = specs[dependency.name]
@@ -99,7 +132,10 @@ module PurifierEnvironmentObservation
       selected.dependencies.each { |dependency| pending << dependency.name if dependency.type == :runtime }
     end
     fail!("native selected closure contains an unrelated package") unless reachable.sort == names.sort
+    generated = [environment, File.join(root, "vendor", "gems", Gem.ruby_engine, Gem::ConfigMap[:ruby_version], "environment.rb")]
+    generated += specs.values.map { |spec| spec.loaded_from }
     {"packages" => packages.sort_by { |package| package["name"] },
+     "generatedPaths" => generated.map { |path| within(root, path) }.sort,
      "rootRequirements" => roots.sort_by { |dependency| dependency["name"] }}
   end
 end

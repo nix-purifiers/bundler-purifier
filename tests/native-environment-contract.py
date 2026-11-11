@@ -34,6 +34,7 @@ valid = dict(format="bundler-native-environment", schemaVersion=1, interface="en
              nativeLockFile=None, contexts=["default"],
              sdk=dict(ruby="1.8.4", patchlevel=None, abi="1.8", platform="x86_64-linux",
                       interpreter=digest(b"synthetic interpreter"), components=components,
+                      closure=[dict(path="/nix/store/" + "a" * 32 + "-synthetic-sdk", narHash=digest(b"synthetic closure"))],
                       clientArtifact=components[2],
                       clientReport=dict(name="Bundler::VERSION", value="0.8.1"),
                       rubygemsReport=dict(name="Gem::VERSION", value="1.3.5")),

@@ -53,6 +53,17 @@ with tempfile.TemporaryDirectory(prefix="native-environment-observer-") as tempo
         shutil.copytree(relocated, project, symlinks=True)
         mutate(project)
         run(label, project, False)
+    project = temporary / "changed-installed-payload"
+    shutil.copytree(relocated, project, symlinks=True)
+    payload = next(project.glob("vendor/gems/ruby/1.8/gems/incoming_consumer-*/lib/incoming_consumer.rb"))
+    payload.chmod(payload.stat().st_mode | 0o200)
+    payload.write_bytes(payload.read_bytes() + b"\n# changed installed bytes\n")
+    run("changed-installed-payload", project, False)
+    project = temporary / "changed-installed-executable-mode"
+    shutil.copytree(relocated, project, symlinks=True)
+    executable = next(project.glob("vendor/gems/ruby/1.8/gems/historical_greeting-*/exe/historical-greeting"))
+    executable.chmod(executable.stat().st_mode & ~0o111)
+    run("changed-installed-executable-mode", project, False)
     # Reject an escaping gemspec before its first byte can be evaluated.
     project = temporary / "escaping-specification"
     shutil.copytree(relocated, project, symlinks=True)
