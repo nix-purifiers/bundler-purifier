@@ -49,7 +49,17 @@ else
     require File.expand_path("rubygems_inputs", File.dirname(__FILE__))
   end
   Bundler.definition.actual_dependencies.each { |dependency| native_sources[dependency.name] = dependency.source }
-  Bundler.load
+  runtime = Bundler.load
+  unless Bundler.respond_to?(:env_file)
+    raise "bundler-purifier: native runtime unavailable" unless runtime.is_a?(Bundler::Runtime) &&
+      runtime.respond_to?(:rb_lock_file, true) && runtime.respond_to?(:gemfile_fingerprint, true)
+    environment = runtime.send(:rb_lock_file)
+    raise "bundler-purifier: native environment missing; run native install and lock" unless environment.file?
+    fingerprint = runtime.send(:gemfile_fingerprint)
+    require environment.to_s
+    raise "bundler-purifier: native environment SDK mismatch" unless Bundler::LOCKED_BY == Bundler::VERSION
+    raise "bundler-purifier: native environment fingerprint stale" unless Bundler::FINGERPRINT == fingerprint
+  end
   raise "bundler-purifier: native environment missing; run native install and lock" unless defined?(Bundler::SPECS)
   Bundler::SPECS
 end
