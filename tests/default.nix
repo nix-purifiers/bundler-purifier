@@ -482,11 +482,6 @@ in
     ruby40-app = project40.packages.app;
     ruby40-repository = project40.release.projections.rubygems;
     ruby40-cli = cli.override { projectRuby = pkgs.ruby_4_0; };
-    ruby40-sdk-input =
-      (import ./composition.nix {
-        inherit pkgs build purifier;
-        producer = project40;
-      }).sdkInput;
     ruby19-sdk = native19.sdk;
     ruby19-native-extension = project19.tests;
     ruby19-app = project19.packages.app;

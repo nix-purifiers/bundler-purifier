@@ -9,6 +9,7 @@ import json
 import io
 import tarfile
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -190,7 +191,7 @@ end
         assert b'BUNDLED WITH' not in native_lock
         assert captured['bundlerVersion'] == args.bundler_version
     else:
-        assert ('BUNDLED WITH\n   ' + args.bundler_version).encode() in native_lock
+        assert re.search(rb'(?m)^BUNDLED WITH\n[ \t]+' + re.escape(args.bundler_version.encode()) + rb'\n', native_lock)
         assert 'bundlerVersion' not in captured
     assert captured['bundlerHash'] == args.bundler_hash
     assert len(captured['projectInputs']) == 1 and not captured.get('gemHashes')
