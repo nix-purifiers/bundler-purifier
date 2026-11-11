@@ -496,6 +496,13 @@ in
       nativeBuildInputs = [ rubies2018.stdenv.cc ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    native23Bundler20 = import ./ruby23-bundler20-sdk.nix { inherit pkgs ruby2018Source; };
+    project23Bundler20 = build {
+      src = ./fixtures/ruby23-bundler20;
+      ruby = native23Bundler20.sdk;
+      nativeBuildInputs = [ native23Bundler20.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project24 = build {
       src = ./fixtures/ruby24;
       ruby = rubies2018.ruby_2_4;
@@ -707,6 +714,22 @@ in
       projectRuby = native22.sdk;
       projectNativeBuildInputs = [ native22.compiler ];
     };
+    ruby23-bundler20-sdk = native23Bundler20.sdk;
+    ruby23-bundler20-app = project23Bundler20.packages.app;
+    ruby23-bundler20-native-extension = project23Bundler20.tests;
+    ruby23-bundler20-repository = project23Bundler20.release.projections.rubygems;
+    ruby23-bundler20-cli = cli.override {
+      projectRuby = native23Bundler20.sdk;
+      projectNativeBuildInputs = [ native23Bundler20.compiler ];
+    };
+    ruby23-bundler20-input-composition =
+      pkgs.runCommand "ruby23-bundler20-native-input-composition"
+        { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native23Bundler20.sdk} ${project23Bundler20.release.projections.rubygems} ${project23Bundler20.release.projections.rubygems.catalog} 2.3.6 2.0.2
+          touch $out
+        '';
     ruby23-sdk = rubies2018.ruby_2_3;
     ruby23-app = project23.packages.app;
     ruby23-native-extension = project23.tests;

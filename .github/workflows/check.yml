@@ -179,6 +179,21 @@ jobs:
               --results "$RUNNER_TEMP/ruby${point}-incoming-evidence"
           done
 
+      - name: Ruby 2.3 with Bundler 2.0 native incoming composition
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        shell: bash
+        run: |
+          update=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.rubygems276-update)
+          mapfile -t sdk < <(nix build --no-link --print-out-paths \
+            .#checks.x86_64-linux.ruby23-bundler20-cli \
+            .#checks.x86_64-linux.ruby23-bundler20-sdk)
+          python3 tests/ruby18-incoming-native.py "${sdk[0]}" "${sdk[1]}" \
+            --ruby-version 2.3.6 --ruby-patchlevel 384 --rubygems-version 2.7.6 \
+            --bundler-version 2.0.2 --bundler-hash 'sha256-TCrh/OigcrgyrHGI8eUwp8/48KadipYhsy0UB9sAotA=' \
+            --sdk-check ruby23-bundler20-sdk --provider-check ruby23-bundler20-app \
+            --rubygems-update-archive "$update" \
+            --results "$RUNNER_TEMP/ruby23-bundler20-incoming-evidence"
+
       - name: Ruby 2.5 through 2.7 native incoming composition
         if: runner.os == 'Linux' && runner.arch == 'X64'
         shell: bash
@@ -359,6 +374,14 @@ jobs:
             ${{ runner.temp }}/ruby41-incoming-evidence/consumer/incoming_consumer.gemspec
             ${{ runner.temp }}/ruby41-incoming-evidence/consumer/lib/incoming_consumer.rb
             ${{ runner.temp }}/ruby41-incoming-evidence/consumer.nix
+            ${{ runner.temp }}/ruby23-bundler20-incoming-evidence/receipt.json
+            ${{ runner.temp }}/ruby23-bundler20-incoming-evidence/logs/*
+            ${{ runner.temp }}/ruby23-bundler20-incoming-evidence/consumer/Gemfile
+            ${{ runner.temp }}/ruby23-bundler20-incoming-evidence/consumer/Gemfile.lock
+            ${{ runner.temp }}/ruby23-bundler20-incoming-evidence/consumer/bundler-purifier.lock.json
+            ${{ runner.temp }}/ruby23-bundler20-incoming-evidence/consumer/incoming_consumer.gemspec
+            ${{ runner.temp }}/ruby23-bundler20-incoming-evidence/consumer/lib/incoming_consumer.rb
+            ${{ runner.temp }}/ruby23-bundler20-incoming-evidence/consumer.nix
             ${{ runner.temp }}/ruby25-incoming-evidence/receipt.json
             ${{ runner.temp }}/ruby25-incoming-evidence/logs/*
             ${{ runner.temp }}/ruby25-incoming-evidence/consumer/Gemfile
