@@ -496,6 +496,20 @@ in
       nativeBuildInputs = [ rubies2018.stdenv.cc ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    native23Bundler20 = import ./ruby23-bundler20-sdk.nix { inherit pkgs ruby2018Source; };
+    project23Bundler20 = build {
+      src = ./fixtures/ruby23-bundler20;
+      ruby = native23Bundler20.sdk;
+      nativeBuildInputs = [ native23Bundler20.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    native23Bundler23 = import ./ruby23-bundler23-sdk.nix { inherit pkgs ruby2018Source; };
+    project23Bundler23 = build {
+      src = ./fixtures/ruby23-bundler23;
+      ruby = native23Bundler23.sdk;
+      nativeBuildInputs = [ native23Bundler23.compiler ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     project24 = build {
       src = ./fixtures/ruby24;
       ruby = rubies2018.ruby_2_4;
@@ -615,7 +629,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native20.sdk} ${project20.release.projections.rubygems} ${project20.release.projections.rubygems.catalog} 2.0.0
-          ${native20.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../tools/rubygems_inputs.rb}
+          ${native20.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby20-cli = cli.override {
@@ -631,7 +645,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native21.sdk} ${project21.release.projections.rubygems} ${project21.release.projections.rubygems.catalog} 2.1.3
-          ${native21.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../tools/rubygems_inputs.rb}
+          ${native21.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby21-cli = cli.override {
@@ -707,6 +721,39 @@ in
       projectRuby = native22.sdk;
       projectNativeBuildInputs = [ native22.compiler ];
     };
+    ruby23-bundler20-sdk = native23Bundler20.sdk;
+    ruby23-bundler20-app = project23Bundler20.packages.app;
+    ruby23-bundler20-native-extension = project23Bundler20.tests;
+    ruby23-bundler20-repository = project23Bundler20.release.projections.rubygems;
+    ruby23-bundler20-cli = cli.override {
+      projectRuby = native23Bundler20.sdk;
+      projectNativeBuildInputs = [ native23Bundler20.compiler ];
+    };
+    ruby23-bundler20-input-composition =
+      pkgs.runCommand "ruby23-bundler20-native-input-composition"
+        { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native23Bundler20.sdk} ${project23Bundler20.release.projections.rubygems} ${project23Bundler20.release.projections.rubygems.catalog} 2.3.6 2.0.2
+          touch $out
+        '';
+    ruby23-bundler23-sdk = native23Bundler23.sdk;
+    ruby23-bundler23-app = project23Bundler23.packages.app;
+    ruby23-bundler23-native-extension = project23Bundler23.tests;
+    ruby23-bundler23-repository = project23Bundler23.release.projections.rubygems;
+    ruby23-bundler23-cli = cli.override {
+      projectRuby = native23Bundler23.sdk;
+      projectNativeBuildInputs = [ native23Bundler23.compiler ];
+    };
+    ruby23-bundler23-input-composition =
+      pkgs.runCommand "ruby23-bundler23-native-input-composition"
+        { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          ${native23Bundler23.sdk}/bin/ruby ${../.}/tests/repository-uri.rb
+          python3 ${../.}/tests/historical-composition.py ${native23Bundler23.sdk} ${project23Bundler23.release.projections.rubygems} ${project23Bundler23.release.projections.rubygems.catalog} 2.3.6 2.3.27
+          touch $out
+        '';
     ruby23-sdk = rubies2018.ruby_2_3;
     ruby23-app = project23.packages.app;
     ruby23-native-extension = project23.tests;
@@ -853,7 +900,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native19.sdk} ${project19.release.projections.rubygems} ${project19.release.projections.rubygems.catalog} 1.9.3
-          ${native19.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../tools/rubygems_inputs.rb}
+          ${native19.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby19-cli = cli.override {

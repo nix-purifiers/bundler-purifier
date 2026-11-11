@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Loaded by a facade Gemfile before Bundler evaluates the user's Gemfile.
 require "bundler"
+require File.expand_path("repository_uri", File.dirname(__FILE__))
 module PurifierGemInputs
   CLASS_METHODS_CAN_MOVE = begin
     probe = Class.new { def purifier_probe; true; end }
@@ -153,7 +154,7 @@ module PurifierGemInputs
     return rubygems_sources(sources).find { |source| source.is_a?(IntrinsicSpecs) } if package["intrinsic"]
     repository = package.fetch("repository")
     rubygems_sources(sources).find do |source|
-      source.remotes.any? { |remote| remote.to_s == repository }
+      source.remotes.any? { |remote| PurifierRepositoryURI.identity(remote) == PurifierRepositoryURI.identity(repository) }
     end or raise "bundler-purifier: missing Nix repository #{repository}"
   end
 
@@ -216,7 +217,7 @@ module PurifierGemInputs
   def self.repository_source?(source)
     source.remotes.any? do |remote|
       remote.scheme == "file" && PACKAGES.values.any? do |package|
-        !package["intrinsic"] && remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "")
+        !package["intrinsic"] && PurifierRepositoryURI.identity(remote) == PurifierRepositoryURI.identity(package.fetch("repository"))
       end
     end
   end
@@ -350,7 +351,7 @@ module PurifierGemInputs
           next unless package
           source = spec.source
           same_source = source.is_a?(Bundler::Source::Rubygems) &&
-            (package["intrinsic"] ? source.remotes.empty? : source.remotes.any? { |remote| remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "") })
+            (package["intrinsic"] ? source.remotes.empty? : source.remotes.any? { |remote| PurifierRepositoryURI.identity(remote) == PurifierRepositoryURI.identity(package.fetch("repository")) })
           spec.name unless spec.version.to_s == package.fetch("version") && same_source
         end
         changed.compact!
@@ -416,14 +417,14 @@ end
 if PurifierGemInputs::LEGACY_SOURCE_ARRAY
   module PurifierGemInputs::RepositoryIdentity
     def purifier_repository_identity
-      [is_a?(PurifierGemInputs::IntrinsicSpecs), remotes.map { |remote| remote.to_s.sub(/\/$/, "") }]
+      [is_a?(PurifierGemInputs::IntrinsicSpecs), remotes.map { |remote| PurifierRepositoryURI.identity(remote) }]
     end
 
     def purifier_nix_repository?
       return true if is_a?(PurifierGemInputs::IntrinsicSpecs)
       remotes.any? do |remote|
         PurifierGemInputs::PACKAGES.values.any? do |package|
-          !package["intrinsic"] && remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "")
+          !package["intrinsic"] && PurifierRepositoryURI.identity(remote) == PurifierRepositoryURI.identity(package.fetch("repository"))
         end
       end
     end

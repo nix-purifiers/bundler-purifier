@@ -4,6 +4,7 @@ require "json"
 require "tempfile"
 require "fileutils"
 require "uri"
+require File.expand_path("repository_uri", File.dirname(__FILE__))
 
 module PurifierNativeBundle
   # Selecting an executable does not activate its gem in a new Ruby
@@ -91,7 +92,7 @@ module PurifierNativeBundle
         remotes = source.respond_to?(:remotes) ? source.remotes : (source.respond_to?(:uri) ? [source.uri] : [])
         !version_matches ||
           !source.is_a?(Bundler::Source::Rubygems) ||
-          (package["intrinsic"] ? !remotes.empty? : !remotes.any? { |remote| remote.to_s.sub(/\/$/, "") == package.fetch("repository").sub(/\/$/, "") })
+          (package["intrinsic"] ? !remotes.empty? : !remotes.any? { |remote| PurifierRepositoryURI.identity(remote) == PurifierRepositoryURI.identity(package.fetch("repository")) })
       end
       if needs_binding
         commands = yaml_lock ? [["install"], ["lock"]] : [["lock", "--local"]]
