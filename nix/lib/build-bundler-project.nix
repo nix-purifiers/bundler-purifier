@@ -394,16 +394,40 @@ let
         ''
       else
         ''
-          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local cache_path vendor/cache
+          purifier_local_config_api=cli
+          ${lib.optionalString (lib.versionOlder lock.bundler "2.1") ''
+            purifier_local_config_api=$(ruby -rrubygems -e ${lib.escapeShellArg ''
+              gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION")
+              require "bundler"
+              require "bundler/cli"
+              commands = Bundler::CLI.respond_to?(:all_commands) ? Bundler::CLI.all_commands : Bundler::CLI.all_tasks
+              command = commands.fetch("config")
+              puts command.options.key?("local") ? "cli" : "settings"
+            ''})
+          ''}
+          native_bundle_local_config() {
+            if [ "$purifier_local_config_api" = settings ]; then
+              # Earlier config commands have no --local flag. Use the SDK's
+              # own local settings writer so the output retains its bundle.
+              ruby -rrubygems -e ${lib.escapeShellArg ''
+                gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION")
+                require "bundler"
+                Bundler.settings[ARGV.fetch(0)] = ARGV.fetch(1)
+              ''} "$@"
+            else
+              bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local "$@"
+            fi
+          }
+          native_bundle_local_config cache_path vendor/cache
           ${lib.optionalString (selectedInputs != [ ]) ''
             BUNDLER_PURIFIER_PERSIST_LOCK=1 BUNDLE_FROZEN=false BUNDLE_DEPLOYMENT=false \
               bundle lock --local >&2
           ''}
-          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local deployment true
-          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local frozen true
-          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local path vendor/bundle
+          native_bundle_local_config deployment true
+          native_bundle_local_config frozen true
+          native_bundle_local_config path vendor/bundle
           ${lib.optionalString (without != [ ]) ''
-            bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local without ${lib.escapeShellArg (lib.concatStringsSep ":" without)}
+            native_bundle_local_config without ${lib.escapeShellArg (lib.concatStringsSep ":" without)}
           ''}
         ''
     }

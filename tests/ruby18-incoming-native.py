@@ -457,7 +457,7 @@ puts "ORDINARY|#{RUBY_VERSION}|#{RUBY_PATCHLEVEL}|#{Gem::VERSION}|42"
 paths = File.readlines("/proc/self/maps").map { |line| line.split.last }.uniq.select { |path| path =~ /json\/ext\/parser\.so$/ }
 abort "ambiguous parser" unless paths.size == 1
 native = paths.first
-abort "not installed ordinary gem" unless native.start_with?(ENV.fetch("GEM_HOME") + "/")
+abort "not installed ordinary gem" unless native.index(ENV.fetch("GEM_HOME") + "/") == 0
 puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
 '''
         ordinary_output = run('ordinary-runtime', [args.sdk / 'bin/ruby', '-e', ordinary_code], ordinary, ordinary_env)
