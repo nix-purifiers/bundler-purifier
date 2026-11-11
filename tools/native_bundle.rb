@@ -41,7 +41,7 @@ module PurifierNativeBundle
     working_directory = ENV.fetch("BUNDLER_PURIFIER_WORKING_DIRECTORY", root)
     return native_system(env, bundle_command(ruby, bundle, arguments), :chdir => working_directory) if views.empty?
 
-    command = arguments.find { |argument| !argument.start_with?("-") }
+    command = arguments.find { |argument| argument.index("-") != 0 }
     env = env.merge("BUNDLER_PURIFIER_RUNTIME" => %w[exec console].include?(command) ? "1" : "0")
     packages = {}
     views.each do |view|

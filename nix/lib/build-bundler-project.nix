@@ -394,16 +394,30 @@ let
         ''
       else
         ''
-          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local cache_path vendor/cache
+          native_bundle_local_config() {
+            # CLI flag metadata is incomplete in some older releases. Use
+            # the SDK's actual local settings API and retain its own format.
+            ruby -rrubygems -e ${lib.escapeShellArg ''
+              gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION")
+              require "bundler"
+              settings = Bundler.settings
+              if settings.respond_to?(:set_local)
+                settings.set_local(ARGV.fetch(0), ARGV.fetch(1))
+              else
+                settings[ARGV.fetch(0)] = ARGV.fetch(1)
+              end
+            ''} "$@"
+          }
+          native_bundle_local_config cache_path vendor/cache
           ${lib.optionalString (selectedInputs != [ ]) ''
             BUNDLER_PURIFIER_PERSIST_LOCK=1 BUNDLE_FROZEN=false BUNDLE_DEPLOYMENT=false \
               bundle lock --local >&2
           ''}
-          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local deployment true
-          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local frozen true
-          bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local path vendor/bundle
+          native_bundle_local_config deployment true
+          native_bundle_local_config frozen true
+          native_bundle_local_config path vendor/bundle
           ${lib.optionalString (without != [ ]) ''
-            bundle config ${lib.optionalString (lib.versionAtLeast lock.bundler "2.1") "set "}--local without ${lib.escapeShellArg (lib.concatStringsSep ":" without)}
+            native_bundle_local_config without ${lib.escapeShellArg (lib.concatStringsSep ":" without)}
           ''}
         ''
     }

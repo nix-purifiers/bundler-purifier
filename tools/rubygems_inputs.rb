@@ -12,6 +12,7 @@ module PurifierGemInputs
   end
   INSTANCE_PATCHES = {}
   INSTANCE_FACTORIES = {}
+  INSTANCE_FACTORY_METHODS = {}
   MODULE_PATCHES = {}
 
   def self.decorate_instance(object)
@@ -36,17 +37,23 @@ module PurifierGemInputs
       [:new, :allocate, :from_yaml, :_load, :load].each do |factory|
         next unless target.respond_to?(factory)
         original = eigenclass.instance_method(factory)
-        if factory == :new && original.owner == Class
-          eigenclass.send(:define_method, factory) do |*arguments, &block|
-            object = PurifierGemInputs.decorate_instance(original_allocate.bind(self).call)
-            object.send(:initialize, *arguments, &block)
-            object
+        native_class_new = factory == :new && (original.respond_to?(:owner) ? original.owner == Class : original == Class.instance_method(:new))
+        methods = (INSTANCE_FACTORY_METHODS[target.object_id] ||= {})
+        methods[factory] = [original, original_allocate, native_class_new]
+        # A method definition forwards blocks on Ruby 1.8.6, whose block
+        # parameter syntax cannot capture &block in define_method bodies.
+        eigenclass.class_eval <<-RUBY, __FILE__, __LINE__ + 1
+          def #{factory}(*arguments, &block)
+            original, original_allocate, native_class_new = PurifierGemInputs::INSTANCE_FACTORY_METHODS[#{target.object_id}][#{factory.inspect}]
+            if native_class_new
+              object = PurifierGemInputs.decorate_instance(original_allocate.bind(self).call)
+              object.send(:initialize, *arguments, &block)
+              object
+            else
+              PurifierGemInputs.decorate_instance(original.bind(self).call(*arguments, &block))
+            end
           end
-        else
-          eigenclass.send(:define_method, factory) do |*arguments, &block|
-            PurifierGemInputs.decorate_instance(original.bind(self).call(*arguments, &block))
-          end
-        end
+        RUBY
       end
       original_copy = target.instance_method(:initialize_copy)
       target.send(:define_method, :initialize_copy) do |other|
@@ -168,7 +175,15 @@ module PurifierGemInputs
   module ProjectDependencies
     def dependencies
       values = super
-      return values if name.nil? || name.include?("\0") || values.none? { |dependency| PACKAGES.key?(dependency.name) } || full_gem_path.start_with?(RbConfig::CONFIG.fetch("prefix") + "/")
+      return values if name.nil? || name.include?("\0") || !values.any? { |dependency| PACKAGES.key?(dependency.name) }
+      begin
+        return values if full_gem_path.index(RbConfig::CONFIG.fetch("prefix") + "/") == 0
+      rescue Gem::Exception
+        # Early RubyGems has no installation path until the SDK assigns a
+        # source to this genuine specification. Keep its native array then.
+        raise unless loaded_from.nil?
+        return values
+      end
       mapped = values.map do |dependency|
         PACKAGES.key?(dependency.name) && !dependency.is_a?(Requirements) ? dependency.dup.extend(Requirements) : dependency
       end
@@ -227,7 +242,8 @@ module PurifierGemInputs
   module LegacyRepositorySpecs
     def cached_specs
       return super unless PurifierGemInputs.repository_source?(self)
-      @purifier_legacy_cached_specs ||= super.tap do |index|
+      @purifier_legacy_cached_specs ||= begin
+        index = super
         remotes.each do |remote|
           next unless remote.scheme == "file"
           path = PurifierGemInputs.repository_path(remote)
@@ -241,6 +257,7 @@ module PurifierGemInputs
             index << spec
           end
         end
+        index
       end
     end
   end
@@ -253,17 +270,17 @@ module PurifierGemInputs
 
     def specs
       return super unless PurifierGemInputs.repository_source?(self)
-      super.tap do |index|
-        cached_specs.each { |spec| index << spec }
-      end
+      index = super
+      cached_specs.each { |spec| index << spec }
+      index
     end
   end
 
   module LocalRepositoryChecksums
     def checksum_store
-      super.tap do |store|
-        PurifierGemInputs.register_repository_checksums(self, store) if PurifierGemInputs.repository_source?(self)
-      end
+      store = super
+      PurifierGemInputs.register_repository_checksums(self, store) if PurifierGemInputs.repository_source?(self)
+      store
     end
   end
 
@@ -293,7 +310,7 @@ module PurifierGemInputs
             next unless PACKAGES.key?(spec.name)
             installed = Gem::Specification.find_all_by_name(spec.name, "= #{spec.version}").find do |candidate|
               candidate.platform.to_s == spec.platform.to_s && candidate.loaded_from &&
-                candidate.full_gem_path.start_with?(Gem.dir + "/") && File.file?(candidate.loaded_from)
+                (candidate.full_gem_path.index(Gem.dir + "/") == 0) && File.file?(candidate.loaded_from)
             end
             spec = installed if installed
             spec.source = self

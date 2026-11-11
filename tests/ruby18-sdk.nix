@@ -6,6 +6,8 @@
   olderRubySource,
   rubygemsVersion ? "2.6.14",
   rubygemsHash ? "sha256-7K7fd0g1Sec6M6Z3n0dpr/YZjH9Q3xJCVsyGnMkF/64=",
+  jsonVersion ? "1.8.6",
+  jsonHash ? "sha256-Za8nyphfcOsNCDqrD3VxLHcYcSIq8CHOUzutd707smI=",
   bundlerVersion ? "1.17.3",
   bundlerHash ? "sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq1596X5C0hTdqZ9w1I=",
   rubyPackage ? null,
@@ -21,6 +23,7 @@ let
     config = { };
   };
   ruby = if rubyPackage == null then old.ruby_1_8 else rubyPackage;
+  jsonId = pkgs.lib.replaceStrings [ "." ] [ "" ] jsonVersion;
   gemId = pkgs.lib.replaceStrings [ "." ] [ "" ] rubygemsVersion;
   documentFlags =
     if pkgs.lib.versionOlder rubygemsVersion "2.0" then "--no-rdoc --no-ri" else "--no-document";
@@ -33,8 +36,8 @@ let
     hash = bundlerHash;
   };
   jsonGem = pkgs.fetchurl {
-    url = "https://rubygems.org/downloads/json-1.8.6.gem";
-    hash = "sha256-Za8nyphfcOsNCDqrD3VxLHcYcSIq8CHOUzutd707smI=";
+    url = "https://rubygems.org/downloads/json-${jsonVersion}.gem";
+    hash = jsonHash;
   };
   rubygems =
     pkgs.runCommand "${runtimeName}-rubygems${gemId}" { nativeBuildInputs = [ pkgs.ruby ]; }
@@ -53,7 +56,7 @@ let
         makeWrapper "$out/bin/ruby" "$out/bin/gem" --add-flags ${rubygems}/bin/gem
       '';
   codecGems =
-    pkgs.runCommand "${runtimeName}-bundler-${bundlerVersion}-json186"
+    pkgs.runCommand "${runtimeName}-bundler-${bundlerVersion}-json${jsonId}"
       {
         nativeBuildInputs = [
           baseSdk
@@ -63,7 +66,7 @@ let
       ''
         export HOME=$TMPDIR GEM_HOME=$out/gems GEM_PATH=$out/gems
         gem install --local ${documentFlags} --install-dir "$out/gems" ${bundlerGem} ${jsonGem}
-        ruby -e 'require "rubygems"; gem "json", "= 1.8.6"; require "json"; abort unless RUBY_VERSION == "${rubyVersion}" && Gem::VERSION == "${rubygemsVersion}"; abort unless JSON::VERSION == "1.8.6" && JSON.parser == JSON::Ext::Parser; abort unless JSON.parse(%q({"answer":42}))["answer"] == 42'
+        ruby -e 'require "rubygems"; gem "json", "= ${jsonVersion}"; require "json"; abort unless RUBY_VERSION == "${rubyVersion}" && Gem::VERSION == "${rubygemsVersion}"; abort unless JSON::VERSION == "${jsonVersion}" && JSON.parser == JSON::Ext::Parser; abort unless JSON.parse(%q({"answer":42}))["answer"] == 42'
       '';
   sdk =
     pkgs.runCommand "${runtimeName}-rubygems${gemId}-sdk"

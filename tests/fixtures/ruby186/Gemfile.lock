@@ -1,0 +1,16 @@
+PATH
+  remote: .
+  specs:
+    historical_greeting (1.0.0)
+      json (= 1.8.6)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    json (1.8.6)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  historical_greeting!

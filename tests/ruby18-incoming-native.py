@@ -52,6 +52,13 @@ deadline = time.monotonic() + 1800
 capture_server = None
 home = work / 'home'
 home.mkdir()
+if args.rubygems_version == '1.3.7':
+    # This native client predates NO_PROXY. Keep the loopback registry on
+    # the SDK's official no-proxy setting without changing Nix's network.
+    fixture_gem_config = home / '.gemrc'
+    fixture_gem_config.write_text('---\nhttp_proxy: :no_proxy\n')
+    (work / 'capture.gemrc').write_bytes(fixture_gem_config.read_bytes())
+    receipt['fixtureGemConfigSha256'] = hashlib.sha256(fixture_gem_config.read_bytes()).hexdigest()
 temporary = work / 'tmp'
 temporary.mkdir()
 env = {key: value for key, value in os.environ.items() if not key.startswith(('BUNDLE_', 'GEM_', 'RUBY'))}
@@ -109,6 +116,9 @@ try:
         'require "rubygems"; gem "bundler", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION", ">= 0"); require "bundler"; puts [RUBY_VERSION,RUBY_PATCHLEVEL,Gem::VERSION,Bundler::VERSION,Gem.ruby,RbConfig::CONFIG.fetch("prefix")].join("|")'])
     version_fields = versions.strip().split('|')
     assert version_fields[:4] == [args.ruby_version, str(args.ruby_patchlevel), args.rubygems_version, args.bundler_version], versions
+    if args.rubygems_version == '1.3.7':
+        run('native-fixture-proxy-config', [args.sdk / 'bin/ruby', '-rrubygems', '-e',
+            'abort unless Gem.configuration[:http_proxy] == :no_proxy'])
     actual_ruby, actual_prefix = version_fields[4:]
     assert Path(actual_ruby).is_file()
     receipt['actualRubyExecutableSha256'] = hashlib.sha256(Path(actual_ruby).read_bytes()).hexdigest()
@@ -364,6 +374,7 @@ in build {
         assert update is not None and update.is_file()
         update_bytes = update.read_bytes()
         update_hashes = {
+            '1.3.7': 'af7d7d4085051f113a1fba822c9ba641cf52e9eba9fb4311cdbcd6be6dd0e80c',
             '1.8.30': 'e9f5e3052c5db8d1bf77c2a65047ed5bd9977b73c0ed908c406610210591854c',
             '2.7.6': 'ee5ef219ac97f5499c31e6071eae424c3265620ece33b5cc66e09fa30f22086a',
             '3.1.2': '7bfe4e5e274191e56da8d127c79df10d9120feb8650e4bad29238f4b2773a661',
@@ -446,7 +457,11 @@ in build {
         version = root_archive[len('incoming_consumer-'):-len('.gem')]
         gem_help = run('native-gem-install-help', [args.sdk / 'bin/gem', 'help', 'install'], ordinary, ordinary_env)
         doc_flags = ['--no-document'] if '--no-document' in gem_help or '--[no-]document' in gem_help else ['--no-rdoc', '--no-ri']
-        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, *proxy_flags, '--clear-sources', '--prerelease',
+        clear_flags = ['--clear-sources'] if '--clear-sources' in gem_help else []
+        if args.rubygems_version == '1.3.7':
+            run('native-ordinary-sources', [args.sdk / 'bin/ruby', '-rrubygems', '-e',
+                'Gem.configuration; abort unless Gem.sources == [ARGV.fetch(0)]', host], ordinary, ordinary_env)
+        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, *proxy_flags, *clear_flags, '--prerelease',
             '--source', host, 'incoming_consumer', '--version', version], ordinary, ordinary_env)
         ordinary_code = r'''require "incoming_consumer"
 require "digest/sha2"
@@ -456,7 +471,7 @@ puts "ORDINARY|#{RUBY_VERSION}|#{RUBY_PATCHLEVEL}|#{Gem::VERSION}|42"
 paths = File.readlines("/proc/self/maps").map { |line| line.split.last }.uniq.select { |path| path =~ /json\/ext\/parser\.so$/ }
 abort "ambiguous parser" unless paths.size == 1
 native = paths.first
-abort "not installed ordinary gem" unless native.start_with?(ENV.fetch("GEM_HOME") + "/")
+abort "not installed ordinary gem" unless native.index(ENV.fetch("GEM_HOME") + "/") == 0
 puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
 '''
         ordinary_output = run('ordinary-runtime', [args.sdk / 'bin/ruby', '-e', ordinary_code], ordinary, ordinary_env)

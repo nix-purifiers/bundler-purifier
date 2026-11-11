@@ -29,7 +29,7 @@ args = parser.parse_args()
 tools, repository, catalog = args.tools, args.repository, args.catalog
 expected_ruby, expected_bundler = args.expected_ruby, args.expected_bundler
 extra_gem_path, versionless = args.extra_gem_path, args.versionless
-patchlevel, default_gem_version = {'1.8.7': (374, '2.6.14'), '1.9.1': (431, '2.6.14'), '1.9.2': (330, '2.6.14'), '1.9.3': (547, '2.6.14'), '2.0.0': (481, '2.6.14'), '2.1.3': (242, '2.6.14'), '2.2.7': (470, '2.6.14'), '2.3.6': (384, '2.7.6'), '2.4.3': (205, '2.7.6'), '3.0.5': (211, '3.3.20'), '3.1.7': (261, '3.5.22'), '3.2.8': (263, '3.5.22'), '3.3.8': (144, '3.5.22'), '4.0.9': (0, '3.7.2'), '4.1.0': (-1, '4.1.0.beta2'), '2.6.6': (146, '3.1.2'), '2.7.1': (83, '3.1.2'), '2.5.8': (224, '3.1.2')}[expected_ruby]
+patchlevel, default_gem_version = {'1.8.6': (420, '1.3.7'), '1.8.7': (374, '2.6.14'), '1.9.0': (0, '1.3.7'), '1.9.1': (431, '2.6.14'), '1.9.2': (330, '2.6.14'), '1.9.3': (547, '2.6.14'), '2.0.0': (481, '2.6.14'), '2.1.3': (242, '2.6.14'), '2.2.7': (470, '2.6.14'), '2.3.6': (384, '2.7.6'), '2.4.3': (205, '2.7.6'), '3.0.5': (211, '3.3.20'), '3.1.7': (261, '3.5.22'), '3.2.8': (263, '3.5.22'), '3.3.8': (144, '3.5.22'), '4.0.9': (0, '3.7.2'), '4.1.0': (-1, '4.1.0.beta2'), '2.6.6': (146, '3.1.2'), '2.7.1': (83, '3.1.2'), '2.5.8': (224, '3.1.2')}[expected_ruby]
 gem_version = args.rubygems_version or default_gem_version
 with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     project = Path(temporary)
@@ -72,6 +72,10 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
 require "digest/sha2"
 abort "resolver scope leaked" if Thread.current[:purifier_definition_sources]
 abort "wrong native parser" unless JSON.parser == JSON::Ext::Parser
+requirement = Gem.loaded_specs.fetch("json").required_ruby_version
+abort "current Ruby ABI rejected" unless requirement.satisfied_by?(Gem.ruby_version)
+next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
+abort "next Ruby ABI accepted" if requirement.satisfied_by?(next_release)
 puts "RUNTIME|#{RUBY_VERSION}|#{RUBY_PATCHLEVEL}|#{Gem::VERSION}|#{Bundler::VERSION}"
 puts "VALUE|#{HistoricalGreeting.answer}"
 Gem.loaded_specs.values.each do |spec|
@@ -84,7 +88,7 @@ end
 paths = File.readlines("/proc/self/maps").map { |line| line.split.last }.uniq.select { |path| path =~ /json\/ext\/parser\.so$/ }
 abort "ambiguous loaded parser" unless paths.size == 1
 native = paths.first
-abort "wrong loaded gem" unless native.start_with?(Gem.loaded_specs.fetch("json").full_gem_path + "/")
+abort "wrong loaded gem" unless native.index(Gem.loaded_specs.fetch("json").full_gem_path + "/") == 0
 puts "NATIVE|#{native}|#{Digest::SHA256.file(native).hexdigest}"
 '''
     output = run('exec', 'ruby', '-e', runtime)
