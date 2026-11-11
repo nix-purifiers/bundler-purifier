@@ -45,13 +45,16 @@ if !Bundler.respond_to?(:app_cache) && Bundler.respond_to?(:cache)
     end
     private :config_file
   end
-  class Bundler::Runtime
-    alias_method :purifier_original_cache_path, :cache_path
-    def cache_path
-      directory = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
-      directory ? Pathname.new(directory) : purifier_original_cache_path
+  require "bundler/runtime"
+  if Bundler::Runtime.method_defined?(:cache_path) || Bundler::Runtime.private_method_defined?(:cache_path)
+    class Bundler::Runtime
+      alias_method :purifier_original_cache_path, :cache_path
+      def cache_path
+        directory = ENV["BUNDLE_CACHE_PATH"] || Bundler.settings[:cache_path]
+        directory ? Pathname.new(directory) : purifier_original_cache_path
+      end
+      private :cache_path
     end
-    private :cache_path
   end
   # This RGProxy predates SilentUI's stream initialization. Keep its own
   # forwarding behavior and initialize the real native superclass state.

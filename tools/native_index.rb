@@ -42,6 +42,8 @@ module PurifierNativeIndex
 
   def self.cached
     return Bundler::Index.cached_gems if Bundler::Index.respond_to?(:cached_gems)
-    Bundler::Index.from_cached_specs(Bundler.load.send(:cache_path))
+    runtime = Bundler.load
+    path = runtime.respond_to?(:cache_path, true) ? runtime.send(:cache_path) : runtime.root.join("vendor/cache")
+    Bundler::Index.from_cached_specs(path)
   end
 end
