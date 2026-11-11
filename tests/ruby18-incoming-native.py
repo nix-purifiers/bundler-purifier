@@ -28,8 +28,11 @@ parser.add_argument('--extra-gem-path', type=Path)
 parser.add_argument('--rubygems-version', default='2.6.14')
 parser.add_argument('--no-ruby-dsl', action='store_true')
 parser.add_argument('--yaml-sdk', action='store_true')
+parser.add_argument('--git-source', action='store_true')
+parser.add_argument('--prefetch-git', type=Path)
 parser.add_argument('--rubygems-update-archive', type=Path)
 args = parser.parse_args()
+assert not args.git_source or (args.yaml_sdk and args.prefetch_git and args.prefetch_git.is_file())
 work = args.results.resolve() if args.results else Path(tempfile.mkdtemp(prefix='ruby18-incoming-'))
 work.mkdir(parents=True, exist_ok=args.results is None)
 logs = work / 'logs'
@@ -135,8 +138,18 @@ try:
     capture_server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), EmptyRegistry)
     threading.Thread(target=capture_server.serve_forever, daemon=True).start()
     capture_host = f'http://127.0.0.1:{capture_server.server_port}'
+    if args.git_source:
+        git_repo = work / 'git-leaf'
+        (git_repo / 'lib').mkdir(parents=True)
+        (git_repo / 'lib/git_leaf.rb').write_text('module GitLeaf; def self.answer; 17; end; end\n')
+        (git_repo / 'git_leaf.gemspec').write_text('Gem::Specification.new {|s| s.name="git_leaf"; s.version="1.0.0"; s.authors=["fixture"]; s.summary="native Git"; s.files=["lib/git_leaf.rb"] }\n')
+        run('git-init', ['git', 'init', '-q', '-b', 'main'], git_repo)
+        run('git-add', ['git', 'add', '.'], git_repo)
+        run('git-commit', ['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], git_repo)
     ruby_declaration = '' if args.no_ruby_dsl else 'ruby "1.8.7"\n'
     manifest = f'source "{capture_host}"\n' + ruby_declaration + ('path "." do\n  gem "incoming_consumer", "= 1.0.0"\nend\n' if args.yaml_sdk else 'gemspec\n')
+    if args.git_source:
+        manifest += 'git ' + json.dumps(git_repo.as_uri()) + ', :branch => "main" do\n gem "git_leaf", "= 1.0.0"\nend\n'
     if args.no_ruby_dsl:
         (project / '.ruby-version').write_text('1.8.7\n')
     gemspec = '''Gem::Specification.new do |s|
@@ -146,6 +159,8 @@ try:
   s.add_runtime_dependency "historical_greeting", ">= 99"
 end
 '''
+    if args.git_source:
+        gemspec = gemspec.replace('end\n', '  s.add_runtime_dependency "git_leaf", "= 1.0.0"\nend\n')
     (project / 'Gemfile').write_text(manifest)
     (project / 'incoming_consumer.gemspec').write_text(gemspec)
     (project / 'lib/incoming_consumer.rb').write_text('''require "historical_greeting"
@@ -156,6 +171,9 @@ module IncomingConsumer
   end
 end
 ''')
+    if args.git_source:
+        consumer = project / 'lib/incoming_consumer.rb'
+        consumer.write_text(consumer.read_text().replace('    HistoricalGreeting.answer', '    require "git_leaf"\n    abort unless GitLeaf.answer == 17\n    HistoricalGreeting.answer'))
     reference = f'path:{source}#checks.x86_64-linux.ruby18-app'
     command = args.cli / 'bin/bundler-purifier'
     run('capture-input', [command, 'lock', '--input', reference], project)
@@ -193,6 +211,13 @@ end
         captured = json.loads((project / 'bundler-purifier.lock.json').read_bytes())
         lock_bytes = (project / 'bundler-purifier.lock.json').read_bytes()
         native_lock = (project / 'Gemfile.lock').read_bytes()
+    if args.git_source:
+        git_rev = subprocess.check_output(['git', '-C', str(git_repo), 'rev-parse', 'HEAD'], text=True).strip()
+        seeded = json.loads(run('preseed-git', [args.prefetch_git, '--quiet', '--name', 'git-leaf-' + git_rev[:12], '--url', git_repo.as_uri(), '--rev', git_rev]))
+        assert seeded['hash'] == captured['gitHashes'][git_rev]
+        import shutil
+        shutil.rmtree(git_repo)
+        receipt['originalGitSourceRemovedBeforeOfflineExecution'] = True
     run('prefetch', [command, 'prefetch'], project)
     capture_server.shutdown()
     capture_server.server_close()
@@ -304,7 +329,7 @@ in build {
         receipt['nativeYamlNegatives'] = ['missing-snapshot', 'wrong-hash', 'wrong-sdk', 'stale-native-bytes']
 
     archives = {path.name: path.read_bytes() for path in (repository / 'gems').glob('*.gem')}
-    assert len(archives) == 3
+    assert len(archives) == 3 + int(args.git_source)
     by_digest = {hashlib.sha512(data).digest(): name for name, data in archives.items()}
     stored, uploads = {}, []
     publication_agents = []
@@ -328,7 +353,7 @@ in build {
         index_directory.mkdir()
         index_output = run('native-publication-index', [args.sdk / 'bin/ruby', ROOT / 'tests/rubygems-registry-index.rb',
             index_directory, update, repository])
-        assert index_output == f'NATIVE_INDEX|1.8.7|{args.rubygems_version}|4\n', index_output
+        assert index_output == f'NATIVE_INDEX|1.8.7|{args.rubygems_version}|{4 + int(args.git_source)}\n', index_output
         indexes.update({str(path.relative_to(index_directory)): path.read_bytes()
                        for path in index_directory.rglob('*') if path.is_file()})
         receipt['publicationSdkArchiveSha256'] = hashlib.sha256(update_bytes).hexdigest()

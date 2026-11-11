@@ -140,7 +140,23 @@ selected.values.each do |original|
         copy_runtime_file(input, target)
       end
     end
-    spec = original.dup
+    spec = if legacy_environment && !original.instance_of?(Gem::Specification)
+      # This SDK wraps Git/path specs in a Bundler subclass. Archive only
+      # native RubyGems attributes so ordinary consumers need no SDK class.
+      Gem::Specification.new do |copy|
+        Gem::Specification.attribute_names.each do |attribute|
+          if attribute.to_s == "dependencies"
+            copy.dependencies.concat(original.dependencies.map do |dependency|
+              Gem::Dependency.new(dependency.name, dependency.requirement, dependency.type)
+            end)
+          else
+            copy.send("#{attribute}=", original.send(attribute))
+          end
+        end
+      end
+    else
+      original.dup
+    end
     spec.extensions = []
     spec.require_paths = require_paths.reject { |path| path.start_with?("/") }
     spec.require_paths = ["lib"] if spec.require_paths.empty?

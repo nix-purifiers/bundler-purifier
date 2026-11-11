@@ -395,6 +395,7 @@ in
     ruby18-rubygems-update = native.rubygemsUpdate;
     ruby18-bundler10-sdk = native10.sdk;
     ruby18-bundler09-sdk = native09.sdk;
+    ruby18-git-prefetch = pkgs.nix-prefetch-git;
     ruby18-bundler09-cli = cli.override {
       projectRuby = native09.sdk;
       projectNativeBuildInputs = [ native09.compiler ];

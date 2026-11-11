@@ -87,8 +87,9 @@ jobs:
             case "$epoch" in
               09)
                 version=0.9.26; hash='sha256-z6SzCdAFdRtD3P7HtWmCn6o44bXjMnR6d+uX/3wca0E='
+                git_prefetch=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-git-prefetch)
                 update=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby18-bundler10-rubygems-update)
-                extra=(--versionless --rubygems-version 1.8.30 --no-ruby-dsl --yaml-sdk --rubygems-update-archive "$update")
+                extra=(--versionless --rubygems-version 1.8.30 --no-ruby-dsl --yaml-sdk --git-source --prefetch-git "$git_prefetch/bin/nix-prefetch-git" --rubygems-update-archive "$update")
                 ;;
               10)
                 version=1.0.22; hash='sha256-wOcoWqMSJAdHs6Ox3ll4agSVCkJA7GyWudDv3VjU7EM='
