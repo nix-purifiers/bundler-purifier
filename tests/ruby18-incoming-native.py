@@ -57,6 +57,7 @@ if args.rubygems_version == '1.3.7':
     # the SDK's official no-proxy setting without changing Nix's network.
     fixture_gem_config = home / '.gemrc'
     fixture_gem_config.write_text('---\nhttp_proxy: :no_proxy\n')
+    (work / 'capture.gemrc').write_bytes(fixture_gem_config.read_bytes())
     receipt['fixtureGemConfigSha256'] = hashlib.sha256(fixture_gem_config.read_bytes()).hexdigest()
 temporary = work / 'tmp'
 temporary.mkdir()
@@ -456,7 +457,11 @@ in build {
         version = root_archive[len('incoming_consumer-'):-len('.gem')]
         gem_help = run('native-gem-install-help', [args.sdk / 'bin/gem', 'help', 'install'], ordinary, ordinary_env)
         doc_flags = ['--no-document'] if '--no-document' in gem_help or '--[no-]document' in gem_help else ['--no-rdoc', '--no-ri']
-        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, *proxy_flags, '--clear-sources', '--prerelease',
+        clear_flags = ['--clear-sources'] if '--clear-sources' in gem_help else []
+        if args.rubygems_version == '1.3.7':
+            run('native-ordinary-sources', [args.sdk / 'bin/ruby', '-rrubygems', '-e',
+                'Gem.configuration; abort unless Gem.sources == [ARGV.fetch(0)]', host], ordinary, ordinary_env)
+        run('ordinary-install', [args.sdk / 'bin/gem', 'install', *doc_flags, *proxy_flags, *clear_flags, '--prerelease',
             '--source', host, 'incoming_consumer', '--version', version], ordinary, ordinary_env)
         ordinary_code = r'''require "incoming_consumer"
 require "digest/sha2"
