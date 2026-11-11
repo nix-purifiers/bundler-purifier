@@ -55,6 +55,10 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
         assert (project / 'Gemfile').read_text() == manifest
         return result.stdout if succeeds else result.stdout + result.stderr
 
+    if expected_bundler == '0.9.9':
+        # This native lock also writes an executable environment containing
+        # installed gem paths, so follow its install-before-lock lifecycle.
+        run('install', '--local')
     run('lock', '--local')
     lock = (project / 'Gemfile.lock').read_bytes()
     entries = json.loads(catalog.read_text())['packages']
