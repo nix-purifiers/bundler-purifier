@@ -8,6 +8,31 @@ require "fileutils"
 require "tmpdir"
 require "rbconfig"
 
+def with_capture_directory
+  if Dir.respond_to?(:mktmpdir)
+    Dir.mktmpdir("bundler-capture-") { |directory| yield directory }
+  else
+    # Ruby 1.8.4's tmpdir has no mktmpdir. Create the owned directory
+    # atomically and retry collisions without touching existing entries.
+    directory = nil
+    100.times do
+      candidate = File.join(Dir.tmpdir, "bundler-capture-#{Process.pid}-#{rand(0x7fffffff)}")
+      begin
+        Dir.mkdir(candidate, 0700)
+        directory = candidate
+        break
+      rescue Errno::EEXIST
+      end
+    end
+    raise "bundler-purifier: could not create capture directory" unless directory
+    begin
+      yield directory
+    ensure
+      FileUtils.rm_rf(directory)
+    end
+  end
+end
+
 def copy_runtime_file(input, target)
   FileUtils.mkdir_p(File.dirname(target))
   File.chmod(File.stat(target).mode | 0200, target) if File.exist?(target)
@@ -82,7 +107,7 @@ selected.values.each do |original|
                     "dependencies" => original.runtime_dependencies.map { |dependency| { "name" => dependency.name, "requirement" => dependency.instance_variable_get(:@requirement).to_s } } }
     next
   end
-  Dir.mktmpdir("bundler-capture-") do |directory|
+  with_capture_directory do |directory|
     origin = original.source || native_sources[original.name]
     local = origin.is_a?(Bundler::Source::Path)
     source = legacy_environment && local ? origin.path.to_s : original.full_gem_path
