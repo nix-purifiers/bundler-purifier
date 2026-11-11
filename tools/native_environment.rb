@@ -153,13 +153,14 @@ module PurifierNativeEnvironment
   def self.validate!(value)
     exact!(value, %w[format schemaVersion interface nativeLockFile contexts sdk manifests snapshots packages rootRequirements bindingAlgorithm bindings], "native resolution")
     reject!("native environment document exceeds size limit") if JSON.generate(value).bytesize > MAX_DOCUMENT
-    reject!("unsupported native environment format") unless value.fetch("format") == "bundler-native-environment" && value.fetch("schemaVersion").is_a?(Integer) && value.fetch("schemaVersion") == 1 && value.fetch("interface") == "environment-v08"
+    reject!("unsupported native environment format") unless value.fetch("format") == "bundler-native-environment" && value.fetch("schemaVersion").is_a?(Integer) && value.fetch("schemaVersion") == 1 && %w[environment-v08 environment-v03].include?(value.fetch("interface"))
     reject!("pre-lockfile resolution cannot contain a native lockfile") unless value.fetch("nativeLockFile").nil?
     reject!("unsupported native contexts") unless value.fetch("contexts") == ["default"]
     reject!("unsupported native binding algorithm") unless value.fetch("bindingAlgorithm") == "declared-runtime-requirements-v1"
     bindings!(value.fetch("bindings"))
     sdk!(value.fetch("sdk"))
-    reject!("native interface conflicts with SDK client artifact") unless value.fetch("sdk").fetch("clientArtifact").fetch("version") == "0.8.1"
+    legacy = value.fetch("interface") == "environment-v03"
+    reject!("native interface conflicts with SDK client artifact") unless value.fetch("sdk").fetch("clientArtifact").fetch("version") == (legacy ? "0.3.1" : "0.8.1")
     evidence = %w[manifests snapshots].flat_map do |key|
       list!(value.fetch(key), key)
       value.fetch(key)
@@ -184,7 +185,14 @@ module PurifierNativeEnvironment
     packages = value.fetch("packages")
     list!(packages, "native package")
     packages.each do |package|
-      exact!(package, %w[name version platform dependencies archiveHash installedPath specificationPath requirePaths bindir sourceKind], "native package")
+      exact!(package, %w[name version platform dependencies archiveHash installedPath specificationPath requirePaths bindir sourceKind] + (legacy ? ["executables"] : []), "native package")
+      if legacy
+        list!(package.fetch("executables"), "native executable")
+        package.fetch("executables").each do |name|
+          reject!("unsafe native executable") unless name.is_a?(String) && name.match?(/\A[A-Za-z0-9_.-]+\z/) && !%w[. ..].include?(name)
+        end
+        unique!(package.fetch("executables"), "native executable")
+      end
       %w[name version platform].each { |key| scalar!(package.fetch(key), key) }
       digest!(package.fetch("archiveHash"))
       path!(package.fetch("installedPath"))
@@ -192,7 +200,7 @@ module PurifierNativeEnvironment
       list!(package.fetch("requirePaths"), "native load path")
       package.fetch("requirePaths").each { |path| load_path!(path) }
       load_path!(package.fetch("bindir")) unless package.fetch("bindir").nil?
-      reject!("unsupported native source kind") unless package.fetch("sourceKind") == "verified-cache"
+      reject!("unsupported native source kind") unless package.fetch("sourceKind") == (legacy ? "verified-input" : "verified-cache")
       dependencies = package.fetch("dependencies")
       list!(dependencies, "native dependency")
       dependencies.each do |dependency|
@@ -243,9 +251,14 @@ module PurifierNativeEnvironment
       end
     end
     reject!("native selected closure contains an unrelated package") unless reachable.sort == packages.map { |package| package.fetch("name") }.sort
-    prefix = "vendor/gems/ruby/#{value.fetch('sdk').fetch('abi')}/"
+    prefix = legacy ? "vendor/gems/" : "vendor/gems/ruby/#{value.fetch('sdk').fetch('abi')}/"
     path!(prefix.delete_suffix("/"))
-    required_snapshots = ["vendor/gems/environment.rb", prefix + "environment.rb"]
+    required_snapshots = legacy ? ["vendor/gems/environments/default.rb"] : ["vendor/gems/environment.rb", prefix + "environment.rb"]
+    if legacy
+      wrappers = packages.flat_map { |package| package.fetch("executables") }
+      unique!(wrappers, "native wrapper owner")
+      required_snapshots.concat(wrappers.map { |name| "vendor/gems/bin/" + name })
+    end
     packages.each do |package|
       installed_prefix = prefix + "gems/"
       installed = package.fetch("installedPath")

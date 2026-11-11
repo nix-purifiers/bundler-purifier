@@ -10,6 +10,27 @@ module PurifierNativeEnvironmentPrepare
   CONTRACT = PurifierNativeEnvironment
   SDK = PurifierNativeEnvironmentSDK
 
+  def self.legacy?(identity)
+    identity.fetch("clientArtifact").fetch("version") == "0.3.1"
+  end
+
+  # A distinct verified-input role survives genuine Gem101 cache cleanup.
+  # Its bytes are inputs, never a captured generated environment.
+  def self.install_v03(destination, sdk, entries, environment, prefix)
+    role = File.join(File.dirname(destination), "native-input-archives")
+    CONTRACT.reject!("native input role already exists") if File.exist?(role) || File.symlink?(role)
+    Dir.mkdir(role, 0700)
+    inventory = entries.each_with_index.map do |entry, index|
+      bytes = File.binread(entry.fetch("path"))
+      CONTRACT.reject!("native input changed before staging") unless CONTRACT.hash_bytes(bytes) == entry.fetch("sha256")
+      filename = index.to_s + ".gem"
+      File.binwrite(File.join(role, filename), bytes)
+      Digest::SHA256.hexdigest(bytes) + "\t" + filename + "\n"
+    end
+    File.binwrite(File.join(role, "inventory.tsv"), inventory.join)
+    SDK.run(File.join(sdk, "bin/ruby"), *prefix, File.join(__dir__, "native_environment_v03_install.rb"), destination, role, env: environment, cwd: destination)
+  end
+
   def self.snapshot(project, relative)
     CONTRACT.path!(relative)
     path = File.realpath(File.join(project, relative))
@@ -46,7 +67,7 @@ module PurifierNativeEnvironmentPrepare
     CONTRACT.exact!(observation, %w[packages rootRequirements generatedPaths], "native environment observation")
     manifests = (["Gemfile"] + project_gemspecs).uniq.sort.map { |path| snapshot(project, path) }
     result = {"format" => "bundler-native-environment", "schemaVersion" => 1,
-              "interface" => "environment-v08", "nativeLockFile" => nil,
+              "interface" => (legacy?(identity) ? "environment-v03" : "environment-v08"), "nativeLockFile" => nil,
               "contexts" => ["default"], "sdk" => identity, "manifests" => manifests,
               "bindingAlgorithm" => "declared-runtime-requirements-v1", "bindings" => bindings,
               "snapshots" => observation.fetch("generatedPaths").map { |path| snapshot(project, path) },
@@ -58,7 +79,8 @@ module PurifierNativeEnvironmentPrepare
     project = File.realpath(project)
     paths.each { |path| snapshot(project, path) }
     script = File.join(__dir__, "native_environment_project_specs.rb")
-    environment = File.join(native_project, "vendor/gems/environment.rb")
+    identity = SDK.attest(sdk)
+    environment = File.join(native_project, legacy?(identity) ? "vendor/gems/environments/default.rb" : "vendor/gems/environment.rb")
     with_bindings(bindings, "runtime") do |context, prefix|
       JSON.parse(SDK.run(File.join(sdk, "bin/ruby"), *prefix, script, project, environment, *paths,
                         env: context, cwd: project))
@@ -95,9 +117,13 @@ module PurifierNativeEnvironmentPrepare
       File.binwrite(path, Base64.strict_decode64(record.fetch("base64")))
     end
     with_bindings(bindings, "resolve") do |environment, prefix|
+      if legacy?(identity)
+        install_v03(destination, sdk, verified.values, environment, prefix)
+      else
       command = prefix.empty? ? [File.join(sdk, "bin/gem")] : [File.join(sdk, "bin/ruby"), *prefix, SDK.gem_script(sdk)]
       verified.each_value { |entry| SDK.run(*command, "bundle", "--cache", entry.fetch("path"), env: environment, cwd: destination) }
       SDK.run(*command, "bundle", "--cached", env: environment, cwd: destination)
+      end
     end
     result = capture(destination, sdk, identity: identity, project_gemspecs: project_gemspecs, bindings: bindings)
     allowed = verified.values.map { |entry| entry.fetch("sha256") }
@@ -128,11 +154,16 @@ module PurifierNativeEnvironmentPrepare
     # Cache and resolve through the genuine plugin. --cached selects only
     # native local sources; Nix supplies the network isolation for Ruby code.
     with_bindings(expected.fetch("bindings"), "resolve") do |environment, prefix|
+      if legacy?(identity)
+        entries = packages.map { |package| {"path" => verified.fetch(package.fetch("name")), "sha256" => package.fetch("archiveHash")} }
+        install_v03(destination, sdk, entries, environment, prefix)
+      else
       command = prefix.empty? ? [File.join(sdk, "bin/gem")] : [File.join(sdk, "bin/ruby"), *prefix, SDK.gem_script(sdk)]
       verified.each_value do |archive|
         SDK.run(*command, "bundle", "--cache", archive, env: environment, cwd: destination)
       end
       SDK.run(*command, "bundle", "--cached", env: environment, cwd: destination)
+      end
     end
     fresh = capture(destination, sdk, identity: identity,
                     project_gemspecs: expected.fetch("manifests").map { |record| record.fetch("path") } - ["Gemfile"],

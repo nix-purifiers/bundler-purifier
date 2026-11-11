@@ -3,7 +3,8 @@
 require "fileutils"
 require "rubygems/package"
 
-specification = Gem::Specification.load(ARGV.fetch(0))
+require "rubygems/source_index" unless Gem::Specification.respond_to?(:load)
+specification = Gem::Specification.respond_to?(:load) ? Gem::Specification.load(ARGV.fetch(0)) : Gem::SourceIndex.load_specification(ARGV.fetch(0))
 raise "could not load gem specification #{ARGV.fetch(0)}" unless specification
 archive = if Gem::Package.respond_to?(:build)
   Gem::Package.build(specification)

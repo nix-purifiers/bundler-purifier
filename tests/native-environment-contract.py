@@ -102,6 +102,28 @@ changed("duplicate-binding", lambda v: v.update(bindings=[dict(name="leaf", vers
 changed("wrong-selected-binding", lambda v: v.update(bindings=[dict(name="leaf", version="99.0.0")]))
 changed("malformed-binding-data", lambda v: v.update(bindings=[dict(name="leaf\nother", version="1.0.0")]))
 
+# Synthetic v03 schema cases complement, rather than replace, native receipts.
+v03 = copy.deepcopy(valid)
+v03['interface'] = 'environment-v03'
+v03['sdk'].update(ruby='1.8.3', clientReport=dict(name='Bundler::VERSION', value='0.5.0'), rubygemsReport=dict(name='Gem::RubyGemsVersion', value='1.0.1'))
+for component in v03['sdk']['components']:
+    component['version'] = dict(ruby='1.8.3', rubygems='1.0.1', bundler='0.3.1', json='1.1.3')[component['name']]
+v03['sdk']['clientArtifact'] = v03['sdk']['components'][2]
+v03['packages'][0].update(installedPath='vendor/gems/gems/leaf-1.0.0', specificationPath='vendor/gems/specifications/leaf-1.0.0.gemspec', sourceKind='verified-input', executables=['leaf'])
+v03['snapshots'] = [snapshot('vendor/gems/environments/default.rb', b'# native environment\n'), snapshot('vendor/gems/specifications/leaf-1.0.0.gemspec', b'# native specification\n'), snapshot('vendor/gems/bin/leaf', b'#!/usr/bin/env ruby\n')]
+cases.append(('v03-valid', v03, True))
+for label, mutate in [
+    ('cache-role', lambda v: v['packages'][0].update(sourceKind='verified-cache')),
+    ('missing-wrapper', lambda v: v['snapshots'].pop()),
+    ('foreign-wrapper', lambda v: v['snapshots'].append(snapshot('vendor/gems/bin/foreign', b'foreign'))),
+    ('unsafe-executable', lambda v: v['packages'][0].update(executables=['../foreign'])),
+    ('duplicate-executable', lambda v: v['packages'][0].update(executables=['leaf', 'leaf'])),
+    ('wrong-interface', lambda v: v.update(interface='environment-v08')),
+]:
+    candidate = copy.deepcopy(v03)
+    mutate(candidate)
+    cases.append(('v03-' + label, candidate, False))
+
 host = '''require ARGV.shift
 begin
   PurifierNativeEnvironment.validate!(PurifierNativeEnvironment.parse(File.binread(ARGV.shift)))

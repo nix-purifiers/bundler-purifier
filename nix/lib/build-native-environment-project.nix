@@ -35,6 +35,16 @@
 let
   lock = (import ./read-native-environment-lock.nix { inherit lib; } { inherit src lockFile; }).lock;
   resolution = lock.nativeResolution;
+  legacy = resolution.interface == "environment-v03";
+  normalizedSdk = resolution.sdk // {
+    components = lib.sort (a: b: a.name < b.name) resolution.sdk.components;
+    closure = lib.sort (a: b: a.path < b.path) resolution.sdk.closure;
+  };
+  nativeSdkIdentity = builtins.convertHash {
+    hash = builtins.hashString "sha256" (builtins.toJSON normalizedSdk);
+    hashAlgo = "sha256";
+    toHashFormat = "sri";
+  };
   lockedDependencies = purifier.lockedProjectInputs {
     inputs = lock.projectInputs;
     system = stdenv.hostPlatform.system;
@@ -219,9 +229,16 @@ let
       }
       ''
         export HOME=$TMPDIR
-        mkdir project
-        cp -r --no-preserve=mode ${app}/project/. project/
-        cd project
+        ${
+          if legacy then
+            "cd ${app}/project"
+          else
+            ''
+              mkdir project
+              cp -r --no-preserve=mode ${app}/project/. project/
+              cd project
+            ''
+        }
         export BUNDLER_PURIFIER_OWN_ARCHIVES="$ownArchives"
         export BUNDLER_PURIFIER_PROJECT_ROOTS="$projectRoots"
         export BUNDLER_PURIFIER_PROJECT_DIRECTORIES="$projectDirectories"
@@ -231,15 +248,22 @@ let
       '';
   projectionFor =
     roots:
-    purifier.rubygemsProjections {
-      archives = map (archive: "${capturedGems}/${archive}") (readJson "${capturedGems}/archives.json");
-      producer = app;
-      inherit dependencies runCommand roots;
-      intrinsics = readJson "${capturedGems}/intrinsics.json";
-      ruby = projectionRuby;
-      inherit indexRuby;
-      name = "${name}-rubygems-repository";
-    };
+    purifier.rubygemsProjections (
+      {
+        archives = map (archive: "${capturedGems}/${archive}") (readJson "${capturedGems}/archives.json");
+        producer = app;
+        inherit dependencies runCommand roots;
+        intrinsics = readJson "${capturedGems}/intrinsics.json";
+        ruby = projectionRuby;
+        inherit indexRuby;
+        name = "${name}-rubygems-repository";
+      }
+      // lib.optionalAttrs legacy {
+        versionScheme = "legacy-numeric-v1";
+        inherit nativeSdkIdentity;
+        legacyIndexRuby = ruby;
+      }
+    );
   projections = projectionFor (map (spec: spec.name) lock.projectSpecs);
   release =
     if builtins.length lock.projectSpecs == 1 then

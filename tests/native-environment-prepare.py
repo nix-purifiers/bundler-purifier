@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix="native-environment-prepare-") as tempor
         (args.evidence / (label + ".stderr")).write_bytes(result.stderr)
         assert result.returncode != 0, label
         reason = {
-            "wrong-ABI": "native installed role conflicts with SDK layout",
+            "wrong-ABI": "native replay SDK differs from capture" if captured["interface"] == "environment-v03" else "native installed role conflicts with SDK layout",
             "wrong-interpreter": "native replay SDK differs from capture",
             "wrong-report": "unsupported native interface identity",
             "wrong-archive": "native replay archive bytes differ from capture",

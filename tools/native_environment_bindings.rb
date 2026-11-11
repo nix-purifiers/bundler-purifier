@@ -11,9 +11,13 @@ module PurifierNativeEnvironmentBindings
     @packages || {}
   end
 
+  def self.legacy_profile?
+    @legacy_profile
+  end
+
   def self.normalize_dependency(dependency)
     version = packages[dependency.name]
-    if version && dependency.type == :runtime
+    if version && (@legacy_profile || dependency.type == :runtime)
       requirement = Gem::Requirement.new(["= " + version])
       dependency.version_requirements = requirement unless dependency.version_requirements == requirement
     end
@@ -46,13 +50,19 @@ module PurifierNativeEnvironmentBindings
       raise "bundler-purifier: native binding operation changed within process" unless @operation == operation
       return
     end
-    raise "bundler-purifier: unsupported native RubyGems binding interface" unless Gem::VERSION == "1.3.5"
+    gem_version = defined?(Gem::VERSION) ? Gem::VERSION : Gem::RubyGemsVersion
+    legacy = !defined?(Gem::VERSION) && gem_version == "1.0.1" && RUBY_VERSION == "1.8.3"
+    raise "bundler-purifier: unsupported native RubyGems binding interface" unless legacy || gem_version == "1.3.5"
     if operation != "runtime"
+      gem "bundler", legacy ? "= 0.3.1" : "= 0.8.1"
       require "bundler"
-      raise "bundler-purifier: unsupported native binding interface" unless Bundler::VERSION == "0.8.1" && defined?(Bundler::Dsl)
+      valid = legacy ? (Bundler::VERSION == "0.5.0" && defined?(Bundler::ManifestBuilder)) : (Bundler::VERSION == "0.8.1" && defined?(Bundler::Dsl))
+      raise "bundler-purifier: unsupported native binding interface" unless valid
     end
+    @legacy_profile = legacy
+    dsl = operation == "runtime" ? nil : (legacy ? Bundler::ManifestBuilder : Bundler::Dsl)
     raise "bundler-purifier: native specification adapter conflicts with SDK" if Gem::Specification.method_defined?(:purifier_environment_original_dependencies)
-    raise "bundler-purifier: native DSL adapter conflicts with SDK" if operation != "runtime" && Bundler::Dsl.method_defined?(:purifier_environment_original_gem)
+    raise "bundler-purifier: native DSL adapter conflicts with SDK" if operation != "runtime" && dsl.method_defined?(:purifier_environment_original_gem)
     Gem::Specification.class_eval do
       alias_method :purifier_environment_original_dependencies, :dependencies
       define_method(:dependencies) do
@@ -62,11 +72,18 @@ module PurifierNativeEnvironmentBindings
       end
     end
     if operation != "runtime"
-      Bundler::Dsl.class_eval do
+      dsl.class_eval do
         alias_method :purifier_environment_original_gem, :gem
         define_method(:gem) do |name, *arguments|
           result = purifier_environment_original_gem(name, *arguments)
-          PurifierNativeEnvironmentBindings.normalize_dependency(@environment.dependencies.last)
+          dependency = if PurifierNativeEnvironmentBindings.legacy_profile?
+            # The genuine early object caches this public Gem::Dependency.
+            # Force its original requirement parser before applying a binding.
+            @manifest_file.dependencies.last.to_gem_dependency
+          else
+            @environment.dependencies.last
+          end
+          PurifierNativeEnvironmentBindings.normalize_dependency(dependency)
           result
         end
       end

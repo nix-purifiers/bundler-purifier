@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Capture the target Bundler SDK's actual runtime graph after native builds.
+require "rubygems"
+gem "bundler", "= 0.3.1" if !defined?(Gem::VERSION) && defined?(Gem::RubyGemsVersion) && Gem::RubyGemsVersion == "1.0.1"
 require "bundler"
 require File.expand_path("ruby_config", File.dirname(__FILE__))
 require "rubygems/package"
@@ -56,7 +58,10 @@ owned = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).inject({}) 
   result
 end
 roots = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_PROJECT_ROOTS", "[]"))
-native_prelock = !defined?(Bundler::Definition) && defined?(Bundler::Bundle) && Bundler::Bundle.respond_to?(:load)
+native_v03 = !defined?(Bundler::Definition) && defined?(Bundler::ManifestFile) && Bundler::VERSION == "0.5.0" && defined?(Gem::RubyGemsVersion) && Gem::RubyGemsVersion == "1.0.1" && Gem.loaded_specs["bundler"].version.to_s == "0.3.1"
+native_prelock = native_v03 || (!defined?(Bundler::Definition) && defined?(Bundler::Bundle) && Bundler::Bundle.respond_to?(:load))
+# Gem101's dependency model has no development/runtime discriminator.
+runtime_dependencies = lambda { |spec| native_v03 ? spec.dependencies : spec.runtime_dependencies }
 if roots.empty?
   roots = if native_prelock
     owned.keys
@@ -72,7 +77,7 @@ legacy_environment = !native_prelock && !Bundler::Definition.respond_to?(:build)
 native_sources = {}
 prelock_own_sources = {}
 runtime_specs = if native_prelock
-  environment = File.join(Dir.pwd, "vendor", "gems", "environment.rb")
+  environment = File.join(Dir.pwd, "vendor", "gems", native_v03 ? "environments/default.rb" : "environment.rb")
   raise "bundler-purifier: native pre-lockfile environment missing" unless File.file?(environment)
   require environment
   selected = Bundler.instance_variable_get(:@bundled_specs)
@@ -115,7 +120,7 @@ selected = {}
 visit = lambda do |name|
   return if selected.key?(name) || name == "bundler" || !specs.key?(name)
   selected[name] = specs.fetch(name)
-  specs.fetch(name).runtime_dependencies.each { |dependency| visit.call(dependency.name) }
+  runtime_dependencies.call(specs.fetch(name)).each { |dependency| visit.call(dependency.name) }
 end
 (roots + owned.keys).uniq.each { |name| visit.call(name) }
 archives = []
@@ -126,11 +131,11 @@ selected.values.each do |original|
     intrinsics << { "name" => original.name, "version" => original.version.to_s,
                     "sdk" => PurifierRubyConfig.values.fetch("prefix"), "ruby" => RUBY_VERSION,
                     "system" => Gem::Platform.local.to_s,
-                    "dependencies" => original.runtime_dependencies.map { |dependency| { "name" => dependency.name, "requirement" => dependency.instance_variable_get(:@requirement).to_s } } }
+                    "dependencies" => runtime_dependencies.call(original).map { |dependency| { "name" => dependency.name, "requirement" => (native_v03 ? dependency.version_requirements : dependency.instance_variable_get(:@requirement)).to_s } } }
     next
   end
   with_capture_directory do |directory|
-    origin = original.source || native_sources[original.name]
+    origin = native_prelock ? nil : (original.source || native_sources[original.name])
     local = native_prelock ? prelock_own_sources.key?(original.name) : origin.is_a?(Bundler::Source::Path)
     source = if native_prelock && local
       prelock_own_sources.fetch(original.name)
@@ -228,7 +233,9 @@ selected.values.each do |original|
       # Legacy installers include patchlevel in Gem.ruby_version, while
       # resolver APIs can use bare RUBY_VERSION for the same release point.
       # Retain exact preview requirements until their ABI is tested separately.
-      spec.required_ruby_version = if Gem.ruby_version.prerelease?
+      spec.required_ruby_version = if native_v03
+        Gem::Requirement.new("~> #{RUBY_VERSION}.0")
+      elsif Gem.ruby_version.prerelease?
         Gem::Requirement.new("= #{Gem.ruby_version}")
       else
         next_release = Gem::Version.new(RUBY_VERSION + ".0").bump
