@@ -199,6 +199,16 @@ module PurifierGemInputs
     end
   end
 
+  def self.repository_path(remote)
+    if remote.respond_to?(:parser) && remote.parser.respond_to?(:unescape)
+      remote.parser.unescape(remote.path)
+    elsif defined?(URI::DEFAULT_PARSER)
+      URI::DEFAULT_PARSER.unescape(remote.path)
+    else
+      URI.unescape(remote.path)
+    end
+  end
+
   def self.repository_source?(source)
     source.remotes.any? do |remote|
       remote.scheme == "file" && PACKAGES.values.any? do |package|
@@ -215,13 +225,7 @@ module PurifierGemInputs
       @purifier_legacy_cached_specs ||= super.tap do |index|
         remotes.each do |remote|
           next unless remote.scheme == "file"
-          path = if remote.respond_to?(:parser)
-            remote.parser.unescape(remote.path)
-          elsif defined?(URI::DEFAULT_PARSER)
-            URI::DEFAULT_PARSER.unescape(remote.path)
-          else
-            URI.unescape(remote.path)
-          end
+          path = PurifierGemInputs.repository_path(remote)
           directory = File.join(path, "gems")
           cache_paths = respond_to?(:caches) ? caches : instance_variable_get(:@caches)
           cache_paths << Pathname.new(directory) unless cache_paths.include?(Pathname.new(directory))
@@ -302,7 +306,7 @@ module PurifierGemInputs
     return if Bundler.settings[:disable_checksum_validation]
     source.remotes.each do |remote|
       next unless remote.scheme == "file"
-      path = remote.parser.unescape(remote.path)
+      path = repository_path(remote)
       Dir[File.join(path, "gems", "*.gem")].sort.each do |archive|
         spec = Bundler.rubygems.spec_from_gem(archive)
         next unless PACKAGES.key?(spec.name)
