@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Native Ruby incoming Nix gems, pure build and exact projected CLI publication."""
+"""Ruby 1.8 incoming Nix gems, pure build and exact projected CLI publication."""
 import argparse
 import base64
 import hashlib
@@ -26,6 +26,7 @@ parser.add_argument('--bundler-hash', default='sha256-vEv3W1SLJ0UaqfRDsYxGpzndIq
 parser.add_argument('--sdk-check', default='ruby18-sdk')
 parser.add_argument('--provider-check', default='ruby18-app')
 parser.add_argument('--ruby-version', default='1.8.7')
+parser.add_argument('--ruby-requirement')
 parser.add_argument('--ruby-patchlevel', type=int, default=374)
 parser.add_argument('--versionless', action='store_true')
 parser.add_argument('--extra-gem-path', type=Path)
@@ -50,7 +51,7 @@ home.mkdir()
 temporary = work / 'tmp'
 temporary.mkdir()
 env = {key: value for key, value in os.environ.items() if not key.startswith(('BUNDLE_', 'GEM_', 'RUBY'))}
-env.update(HOME=str(home), TMPDIR=str(temporary), XDG_CACHE_HOME=str(work / 'cache'), LC_ALL='C', PATH=f'{args.sdk}/bin:{args.cli}/bin:' + os.environ['PATH'],
+env.update(HOME=str(home), TMPDIR=str(temporary), XDG_CACHE_HOME=str(work / 'cache'), XDG_DATA_HOME=str(work / 'data'), XDG_CONFIG_HOME=str(work / 'config'), LC_ALL='C', PATH=f'{args.sdk}/bin:{args.cli}/bin:' + os.environ['PATH'],
            BUNDLE_USER_HOME=str(work / 'bundle-home'))
 if args.versionless:
     env['BUNDLER_PURIFIER_BUNDLER_VERSION'] = args.bundler_version
@@ -150,7 +151,7 @@ try:
         run('git-init', ['git', 'init', '-q', '-b', 'main'], git_repo)
         run('git-add', ['git', 'add', '.'], git_repo)
         run('git-commit', ['git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], git_repo)
-    ruby_declaration = '' if args.no_ruby_dsl else 'ruby ' + json.dumps(args.ruby_version) + '\n'
+    ruby_declaration = '' if args.no_ruby_dsl else 'ruby ' + json.dumps(args.ruby_requirement or args.ruby_version) + '\n'
     manifest = f'source "{capture_host}"\n' + ruby_declaration + ('path "." do\n  gem "incoming_consumer", "= 1.0.0"\nend\n' if args.yaml_sdk else 'gemspec\n')
     if args.git_source:
         manifest += 'git ' + json.dumps(git_repo.as_uri()) + ', :branch => "main" do\n gem "git_leaf", "= 1.0.0"\nend\n'
@@ -360,8 +361,9 @@ in build {
         update_bytes = update.read_bytes()
         update_hashes = {
             '1.8.30': 'e9f5e3052c5db8d1bf77c2a65047ed5bd9977b73c0ed908c406610210591854c',
-            '2.6.14': 'ecaedf77483549e73a33a6779f4769aff6198c7f50df124256cc869cc905ffae',
+            '2.7.6': 'ee5ef219ac97f5499c31e6071eae424c3265620ece33b5cc66e09fa30f22086a',
             '3.1.2': '7bfe4e5e274191e56da8d127c79df10d9120feb8650e4bad29238f4b2773a661',
+            '2.6.14': 'ecaedf77483549e73a33a6779f4769aff6198c7f50df124256cc869cc905ffae',
         }
         assert hashlib.sha256(update_bytes).hexdigest() == update_hashes[args.rubygems_version]
         registry_sdk_archives['rubygems-update-' + args.rubygems_version + '.gem'] = update_bytes

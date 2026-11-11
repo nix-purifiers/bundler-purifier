@@ -59,6 +59,10 @@
               inherit pkgs;
               historicalRubySource = inputs.historical-ruby;
               olderRubySource = inputs.older-ruby;
+              ruby2017Source = inputs.ruby-2017;
+              ruby2018Source = inputs.ruby-2018;
+              ruby2022Source = inputs.ruby-2022;
+              ruby2025Source = inputs.ruby-2025;
               sharedTools = closure-lib.purifier.projectInputsTool;
               purifier = closure-lib.purifier;
               overlay = self.overlays.default;

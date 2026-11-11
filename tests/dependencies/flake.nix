@@ -21,5 +21,21 @@
     url = "github:NixOS/nixpkgs/770822493e3962d795739fafd522e771bfe06e3d";
     flake = false;
   };
+  inputs.ruby-2022 = {
+    url = "github:NixOS/nixpkgs/ea4c80b39be4c09702b0cb3b42eab59e2ba4f24b";
+    flake = false;
+  };
+  inputs.ruby-2025 = {
+    url = "github:NixOS/nixpkgs/50ab793786d9de88ee30ec4e4c24fb4236fc2674";
+    flake = false;
+  };
+  inputs.ruby-2017 = {
+    url = "github:NixOS/nixpkgs/39cd40f7bea40116ecb756d46a687bfd0d2e550e";
+    flake = false;
+  };
+  inputs.ruby-2018 = {
+    url = "github:NixOS/nixpkgs/120b013e0c082d58a5712cde0a7371ae8b25a601";
+    flake = false;
+  };
   outputs = { ... }: { };
 }

@@ -54,7 +54,7 @@ let
       {
         nativeBuildInputs = [
           baseSdk
-          old.stdenv.gcc
+          (old.stdenv.cc or old.stdenv.gcc)
         ];
       }
       ''
@@ -67,7 +67,7 @@ let
       {
         nativeBuildInputs = [ pkgs.makeWrapper ];
         version = rubyVersion;
-        src = ruby.src;
+        src = ruby.src or (builtins.head ruby.srcs);
         meta.mainProgram = "ruby";
       }
       ''
@@ -81,5 +81,5 @@ in
 {
   inherit sdk rubygemsUpdate;
   gems = codecGems;
-  compiler = old.stdenv.gcc;
+  compiler = (old.stdenv.cc or old.stdenv.gcc);
 }

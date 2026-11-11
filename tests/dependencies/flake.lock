@@ -179,7 +179,79 @@
         "lobsters": "lobsters",
         "nixpkgs": "nixpkgs",
         "older-ruby": "older-ruby",
+        "ruby-2017": "ruby-2017",
+        "ruby-2018": "ruby-2018",
+        "ruby-2022": "ruby-2022",
+        "ruby-2025": "ruby-2025",
         "treefmt-nix": "treefmt-nix"
+      }
+    },
+    "ruby-2017": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1506657975,
+        "narHash": "sha256-UI+jQUhxRreVrn2kl7SsUBjFdQiBRv2CXRLScBMk/U4=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "39cd40f7bea40116ecb756d46a687bfd0d2e550e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "39cd40f7bea40116ecb756d46a687bfd0d2e550e",
+        "type": "github"
+      }
+    },
+    "ruby-2018": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1522825351,
+        "narHash": "sha256-jtxfSXmc07z8U3l0+TuUCSHcd8BgkapvUzjUN7fwZEI=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "120b013e0c082d58a5712cde0a7371ae8b25a601",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "120b013e0c082d58a5712cde0a7371ae8b25a601",
+        "type": "github"
+      }
+    },
+    "ruby-2022": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1688392541,
+        "narHash": "sha256-lHrKvEkCPTUO+7tPfjIcb7Trk6k31rz18vkyqmkeJfY=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "ea4c80b39be4c09702b0cb3b42eab59e2ba4f24b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "ea4c80b39be4c09702b0cb3b42eab59e2ba4f24b",
+        "type": "github"
+      }
+    },
+    "ruby-2025": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1751274312,
+        "narHash": "sha256-/bVBlRpECLVzjV19t5KMdMFWSwKLtb5RyXdjz3LJT+g=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "50ab793786d9de88ee30ec4e4c24fb4236fc2674",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "50ab793786d9de88ee30ec4e4c24fb4236fc2674",
+        "type": "github"
       }
     },
     "treefmt-nix": {
