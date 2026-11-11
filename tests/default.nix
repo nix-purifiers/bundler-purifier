@@ -412,6 +412,14 @@ in
     ruby19-native-extension = project19.tests;
     ruby19-app = project19.packages.app;
     ruby19-repository = project19.release.projections.rubygems;
+    ruby19-input-composition =
+      pkgs.runCommand "ruby193-bundler117-input-composition" { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME=$TMPDIR
+          python3 ${../.}/tests/historical-composition.py ${native19.sdk} ${project19.release.projections.rubygems} ${project19.release.projections.rubygems.catalog} 1.9.3
+          ${native19.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../tools/rubygems_inputs.rb}
+          touch $out
+        '';
     ruby19-cli = cli.override {
       projectRuby = native19.sdk;
       projectNativeBuildInputs = [ native19.compiler ];
