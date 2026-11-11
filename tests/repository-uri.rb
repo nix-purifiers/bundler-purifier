@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+ENV["BUNDLE_GEMFILE"] = File.expand_path("fixtures/ruby23-bundler23/Gemfile", File.dirname(__FILE__))
 require "rubygems"
 gem "bundler", "=2.3.27"
 require "bundler"
