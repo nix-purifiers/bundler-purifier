@@ -17,7 +17,7 @@ parser.add_argument("--archives", type=Path, required=True)
 parser.add_argument("--evidence", type=Path, required=True)
 args = parser.parse_args()
 args.evidence.mkdir()
-helper = Path(__file__).resolve().parent.parent / "tools/native_environment_prepare.rb"
+helper = Path(__file__).resolve().parent.parent / "pkgs/cli/tools/native_environment_prepare.rb"
 captured = json.loads(args.capture.read_text())
 archives = json.loads(args.archives.read_text())
 checks = []
