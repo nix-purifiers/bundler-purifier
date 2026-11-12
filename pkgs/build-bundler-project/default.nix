@@ -69,7 +69,7 @@
   # The `purifier` namespace of the shared nix-purifiers library, which the
   # bundler-purifier overlay passes.
   purifier,
-  integrationTools ? ../../tools,
+  integrationTools ? ../cli/tools,
   # lib.bundler-purifier.readLock (read-lock.nix), which the overlay passes.
   readLock,
   nix ? null,
@@ -709,7 +709,7 @@ let
     "bundle"
   ];
 in
-if (import ./native-lock-version.nix lockFile) == 4 then
+if (import ../../lib-overlays/default/native-lock-version.nix lockFile) == 4 then
   assert
     without == [ ]
     || throw "bundler-purifier: pre-lockfile profiles currently require the default context";

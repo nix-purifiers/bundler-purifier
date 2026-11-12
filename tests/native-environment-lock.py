@@ -97,8 +97,8 @@ with tempfile.TemporaryDirectory(prefix="native-v4-envelope-") as temporary:
             (project / "Gemfile.lock").write_bytes(b"")
         lock = project / "bundler-purifier.lock.json"
         lock.write_text(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n")
-        ruby = subprocess.run([args.ruby, "-e", host, str(root / "tools/native_environment_lock.rb"), str(lock), str(project)], capture_output=True)
-        expression = '((import ' + str(root / 'nix/lib/read-native-environment-lock.nix') + ' { lib = import ' + str(args.nix_lib) + '; }) { src = ' + str(project) + '; }).lock.version'
+        ruby = subprocess.run([args.ruby, "-e", host, str(root / "pkgs/cli/tools/native_environment_lock.rb"), str(lock), str(project)], capture_output=True)
+        expression = '((import ' + str(root / 'lib-overlays/default/read-native-environment-lock.nix') + ' { lib = import ' + str(args.nix_lib) + '; }) { src = ' + str(project) + '; }).lock.version'
         nix = subprocess.run(["nix", "eval", "--impure", "--json", "--expr", expression], capture_output=True)
         assert ruby.returncode in (0, 1), (label, ruby.stderr.decode())
         assert (ruby.returncode == 0) == (nix.returncode == 0) == expected, (label, ruby.stderr.decode(), nix.stderr.decode())

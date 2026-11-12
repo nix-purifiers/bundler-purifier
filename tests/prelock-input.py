@@ -34,7 +34,7 @@ shutil.copytree(args.provider, flake / 'provider', symlinks=True,
   pkgs=import f.inputs.nixpkgs {system="x86_64-linux";};
   deps=builtins.getFlake (builtins.unsafeDiscardStringContext ("path:"+f.outPath+"/tests/dependencies"));
   native=import (f.outPath+"/tests/%s") {inherit pkgs;olderRubySource=deps.inputs.older-ruby;};
-  build=pkgs.callPackage (f.outPath+"/nix/lib/build-bundler-project.nix") {inherit(f.inputs.purifier.lib) purifier;readLock=import (f.outPath+"/nix/lib/read-lock.nix") {inherit(pkgs) lib;};};
+  build=pkgs.callPackage (f.outPath+"/pkgs/build-bundler-project/default.nix") {inherit(f.inputs.purifier.lib) purifier;readLock=import (f.outPath+"/lib-overlays/default/read-lock.nix") {inherit(pkgs) lib;};};
   project=build {src=./provider;ruby=native.sdk;};
  in {packages.x86_64-linux.default=project.packages.app;};
 }

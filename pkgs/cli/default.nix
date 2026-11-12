@@ -24,18 +24,24 @@
   purifierRef ? null,
 }:
 let
+  runtimeSource = lib.fileset.toSource {
+    root = ../..;
+    fileset = lib.fileset.unions [
+      ../../lib-overlays/default
+      ../build-bundler-project
+      ./realize.nix
+      ./tools
+    ];
+  };
   nixpkgsSource = builtins.path {
     inherit path;
     name = "source";
   };
   projectRubyExpression =
-    if projectRuby == null then
-      ""
-    else
-      (import ../../nix/lib/sdk-expression.nix projectRuby).expression;
+    if projectRuby == null then "" else (import ./sdk-expression.nix projectRuby).expression;
   nativeBuildInputsExpression = "[ ${
     lib.concatMapStringsSep " " (
-      input: "(${(import ../../nix/lib/sdk-expression.nix input).expression})"
+      input: "(${(import ./sdk-expression.nix input).expression})"
     ) projectNativeBuildInputs
   } ]";
 in
@@ -57,12 +63,12 @@ stdenvNoCC.mkDerivation {
     # git sources, and nix-prefetch-git hashes them for the lock.
     makeWrapper ${ruby}/bin/ruby "$out/bin/bundler-purifier" \
       --add-flags "$out/libexec/bundler-purifier.rb" \
-      --set BUNDLER_PURIFIER_TOOLS ${../../tools} \
+      --set BUNDLER_PURIFIER_TOOLS ${./tools} \
       --set BUNDLER_PURIFIER_PROJECT_RUBY ${if projectRuby == null then "''" else projectRuby} \
       --set BUNDLER_PURIFIER_RUBY_EXPRESSION ${lib.escapeShellArg projectRubyExpression} \
       --set BUNDLER_PURIFIER_NATIVE_BUILD_INPUTS_EXPRESSION ${lib.escapeShellArg nativeBuildInputsExpression} \
       --prefix PYTHONPATH : ${purifier.projectInputsTool} \
-      --set BUNDLER_PURIFIER_LIB ${../../nix/lib} \
+      --set BUNDLER_PURIFIER_LIB ${runtimeSource}/pkgs/cli \
       --set BUNDLER_PURIFIER_SHARED_FLAKE ${lib.escapeShellArg purifierRef} \
       --set BUNDLER_PURIFIER_NIXPKGS ${nixpkgsSource} \
       --suffix PATH : ${
@@ -76,12 +82,12 @@ stdenvNoCC.mkDerivation {
       --add-flags "$out/libexec/bundle-wrapper.rb" \
       --set BUNDLER_PURIFIER_COMMAND "$out/libexec/bundler-purifier.rb" \
       --set BUNDLER_PURIFIER_BUNDLE "$out/bin/bundle" \
-      --set BUNDLER_PURIFIER_TOOLS ${../../tools} \
+      --set BUNDLER_PURIFIER_TOOLS ${./tools} \
       --set BUNDLER_PURIFIER_PROJECT_RUBY ${if projectRuby == null then "''" else projectRuby} \
       --set BUNDLER_PURIFIER_RUBY_EXPRESSION ${lib.escapeShellArg projectRubyExpression} \
       --set BUNDLER_PURIFIER_NATIVE_BUILD_INPUTS_EXPRESSION ${lib.escapeShellArg nativeBuildInputsExpression} \
       --prefix PYTHONPATH : ${purifier.projectInputsTool} \
-      --set BUNDLER_PURIFIER_LIB ${../../nix/lib} \
+      --set BUNDLER_PURIFIER_LIB ${runtimeSource}/pkgs/cli \
       --set BUNDLER_PURIFIER_SHARED_FLAKE ${lib.escapeShellArg purifierRef} \
       --set BUNDLER_PURIFIER_NIXPKGS ${nixpkgsSource} \
       --suffix PATH : ${

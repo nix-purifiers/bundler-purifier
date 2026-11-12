@@ -312,14 +312,14 @@ module BundlerPurifier
   end
 
   # Runs the lock run and writes the purifier lockfile, which holds only
-  # what Gemfile.lock lacks (see nix/lib/lock.nix): the hashes of gem files
+  # what Gemfile.lock lacks (see lib-overlays/default/read-lock.nix): the hashes of gem files
   # that its CHECKSUMS section does not list, of Bundler's own gem and of
   # git checkouts; the remote of a gem in a section with several remotes;
   # mirrors; the executables of the project's gemspecs; and the Ruby the
   # lock run used. With an outside Gemfile.lock, the lock run works on it
   # in the tree (with_gemfile_lock_in_tree).
   def tools_dir
-    ENV["BUNDLER_PURIFIER_TOOLS"] || File.expand_path("../tools", __dir__)
+    ENV["BUNDLER_PURIFIER_TOOLS"] || File.expand_path("../pkgs/cli/tools", __dir__)
   end
 
   def resolve_project_inputs(refresh: false)
@@ -722,7 +722,7 @@ module BundlerPurifier
   end
 
   # The arguments that select the builder's result for this project in
-  # nix/lib/realize.nix.
+  # pkgs/cli/realize.nix.
   def realize_args
     ["--argstr", "root", root, "--argstr", "lockFile", lockfile_path, "--argstr", "gemfileLock", gemfile_lock_path,
      "--arg", "nixpkgs", nixpkgs, "--argstr", "purifierFlake", shared_flake, "--argstr", "integrationTools", tools_dir,

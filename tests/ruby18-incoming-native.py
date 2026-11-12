@@ -261,8 +261,8 @@ end
     expression.write_text('''let
   f = builtins.getFlake "path:''' + source + '''";
   pkgs = import f.inputs.nixpkgs {};
-  readLock = import (f.outPath + "/nix/lib/read-lock.nix") { inherit (pkgs) lib; };
-  build = pkgs.callPackage (f.outPath + "/nix/lib/build-bundler-project.nix") {
+  readLock = import (f.outPath + "/lib-overlays/default/read-lock.nix") { inherit (pkgs) lib; };
+  build = pkgs.callPackage (f.outPath + "/pkgs/build-bundler-project/default.nix") {
     inherit readLock; inherit (f.inputs.purifier.lib) purifier;
   };
 in build {

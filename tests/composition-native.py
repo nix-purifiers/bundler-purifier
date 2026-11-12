@@ -123,8 +123,8 @@ with context as temporary:
     expression.write_text('''let
       args = builtins.fromJSON (builtins.readFile "''' + str(args) + '''");
       pkgs = import args.nixpkgs {};
-      readLock = import (args.family + "/nix/lib/read-lock.nix") { inherit (pkgs) lib; };
-      build = pkgs.callPackage (args.family + "/nix/lib/build-bundler-project.nix") {
+      readLock = import (args.family + "/lib-overlays/default/read-lock.nix") { inherit (pkgs) lib; };
+      build = pkgs.callPackage (args.family + "/pkgs/build-bundler-project/default.nix") {
         inherit readLock;
         inherit ((builtins.getFlake args.shared).lib) purifier;
       };

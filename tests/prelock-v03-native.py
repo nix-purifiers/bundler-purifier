@@ -30,11 +30,11 @@ home = a.work / 'home'
 home.mkdir()
 env = {k: v for k, v in os.environ.items() if not k.startswith(('GEM_', 'RUBY', 'BUNDLE_', 'BUNDLER_')) and k.lower() not in ['http_proxy', 'https_proxy', 'all_proxy']}
 env.update(HOME=str(home), BUNDLER_PURIFIER_PROJECT_RUBY=str(a.sdk),
-    BUNDLER_PURIFIER_LIB=str(root / 'nix/lib'), BUNDLER_PURIFIER_TOOLS=str(root / 'tools'),
+    BUNDLER_PURIFIER_LIB=str(root / 'pkgs/cli'), BUNDLER_PURIFIER_TOOLS=str(root / 'pkgs/cli/tools'),
     BUNDLER_PURIFIER_SHARED_FLAKE='path:' + str(a.core),
     BUNDLER_PURIFIER_NIXPKGS='builtins.storePath ' + json.dumps(str(a.nixpkgs)))
 receipt = dict(complete=False, commands=[], scope='Local Ruby183/Gem101/Bundler artifact031 project, separately attested Gem135 publisher, ordinary Gem101 consumer.')
-receipt['sourceFiles'] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(list((root / 'tools').glob('*.rb')) + list((root / 'nix/lib').glob('*.nix')) + [root / 'bin/bundler-purifier', Path(__file__).resolve()])}
+receipt['sourceFiles'] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(list((root / 'pkgs/cli/tools').glob('*.rb')) + list((root / 'pkgs/cli').glob('*.nix')) + [root / 'bin/bundler-purifier', Path(__file__).resolve()])}
 if a.core_identity:
     import re
     identity = json.loads(a.core_identity.read_text())
@@ -72,9 +72,9 @@ if a.archive is None:
     inputs = arena / 'native-input-archives'
     inputs.mkdir()
     (inputs / 'inventory.tsv').write_text('')
-    run('bootstrap-native-empty-environment', [a.sdk / 'bin/ruby', root / 'tools/native_environment_v03_install.rb', bootstrap, inputs], bootstrap)
+    run('bootstrap-native-empty-environment', [a.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_v03_install.rb', bootstrap, inputs], bootstrap)
     capture_env = dict(env, BUNDLER_PURIFIER_PROJECT_ROOTS='["json"]')
-    run('capture-sdk-native-json', [a.sdk / 'bin/ruby', root / 'tools/native_environment_exec.rb', bootstrap, a.sdk, '--', a.sdk / 'bin/ruby', '-r', a.core / 'tools/rubygems_codec.rb', root / 'tools/capture_gems.rb', arena / 'archives'], bootstrap, capture_env)
+    run('capture-sdk-native-json', [a.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_exec.rb', bootstrap, a.sdk, '--', a.sdk / 'bin/ruby', '-r', a.core / 'tools/rubygems_codec.rb', root / 'pkgs/cli/tools/capture_gems.rb', arena / 'archives'], bootstrap, capture_env)
     a.archive = arena / 'archives/json-1.1.3-x86_64-linux.gem'
     assert a.archive.is_file()
 

@@ -15,14 +15,14 @@
   nixpkgs,
   # The shared nix-purifiers library as a locked flake reference.
   purifierFlake,
-  integrationTools ? ../../tools,
+  integrationTools ? ./tools,
   rubyExpression ? "",
   nativeBuildInputsExpression ? "[ ]",
 }:
 let
   pkgs = import nixpkgs { };
-  readLock = import ./read-lock.nix { inherit (pkgs) lib; };
-  buildBundlerProject = pkgs.callPackage ./build-bundler-project.nix {
+  readLock = import ../../lib-overlays/default/read-lock.nix { inherit (pkgs) lib; };
+  buildBundlerProject = pkgs.callPackage ../build-bundler-project {
     inherit readLock;
     integrationTools = /. + (toString integrationTools);
     inherit ((builtins.getFlake purifierFlake).lib) purifier;
@@ -40,7 +40,7 @@ let
   # The path sources outside the project are on disk beside it, at the
   # paths Gemfile.lock gives them.
   externalPaths =
-    if (import ./native-lock-version.nix lockFile') == 4 then
+    if (import ../../lib-overlays/default/native-lock-version.nix lockFile') == 4 then
       { }
     else
       builtins.listToAttrs (

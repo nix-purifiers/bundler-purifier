@@ -144,7 +144,7 @@ The builder takes what it needs from the package set by name: `stdenv`,
 the packages the shared library's fetchers build with. It takes no
 `pkgs`. `bundler-purifier.buildBundlerProject.override` replaces any of
 them for one builder, and `bundler-purifier.overrideScope` replaces what
-the whole scope holds. `nix/lib/build-bundler-project.nix` documents the
+the whole scope holds. Public lock readers live in `lib-overlays/default`; the command owns its private runtime under `pkgs/cli`. `pkgs/build-bundler-project/default.nix` documents the
 builder's own arguments. A build runs on the Ruby of the minor version the
 lock was made with, and `ruby` replaces it, as it must for a version the
 builder has no Ruby for. `nativeBuildInputs` and `buildInputs` give native extensions what
