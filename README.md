@@ -40,10 +40,14 @@ every gem, or the named ones, with `bundle update`, and then locks.
 
 `lock` relocks only when the Gemfile, `Gemfile.lock` or a gemspec changed,
 and `lock --force` relocks regardless; a relock of an unchanged project
-writes the same lockfile byte for byte. The lock run uses the Ruby the
-project asks for, in `.ruby-version` or in the `RUBY VERSION` section of
-`Gemfile.lock`, and builds nixpkgs' Ruby of that minor version when it
-differs from the Ruby the command runs on. The project's `.bundle/config`
+writes the same lockfile byte for byte. Local locking and development use
+the installed Ruby on your PATH, or the runtime you explicitly selected.
+That Ruby must satisfy the project's `.ruby-version`, `Gemfile.lock`, and
+dependency requirements. Missing or incompatible runtimes produce an
+error instead of installing a replacement interpreter. Nix fetches the
+locked dependency artifacts; local installation and execution keep your
+Ruby. Full sandboxed builds select a packaged or explicitly supplied SDK.
+The project's `.bundle/config`
 applies to the lock run, except the settings that would narrow what is
 locked (groups, path, frozen and deployment). The builds keep the
 committed `.bundle/config` too, so settings such as compile flags for a

@@ -207,6 +207,43 @@ class BundlerPurifierTest < Minitest::Test
     assert_nil BP.project_ruby_version("GEM\n  remote: https://rubygems.org/\n")
   end
 
+  def with_local_runtime_path
+    previous = ENV.to_h.slice("PATH", "BUNDLER_PURIFIER_PROJECT_RUBY")
+    bindir = File.join(@dir, "installed-runtime", "bin")
+    FileUtils.mkdir_p(bindir)
+    File.symlink(RbConfig.ruby, File.join(bindir, "ruby"))
+    ENV["PATH"] = bindir
+    ENV.delete("BUNDLER_PURIFIER_PROJECT_RUBY")
+    BP.remove_instance_variable(:@lock_ruby_bindir) if BP.instance_variable_defined?(:@lock_ruby_bindir)
+    yield bindir
+  ensure
+    %w[PATH BUNDLER_PURIFIER_PROJECT_RUBY].each { |key| previous.key?(key) ? ENV[key] = previous[key] : ENV.delete(key) }
+    BP.remove_instance_variable(:@lock_ruby_bindir) if BP.instance_variable_defined?(:@lock_ruby_bindir)
+  end
+
+  def test_local_runtime_uses_path_instead_of_helper_configuration
+    with_local_runtime_path do |bindir|
+      assert_equal bindir, BP.lock_ruby_bindir
+      assert_equal File.join(bindir, "ruby"), BP.local_runtime_identity.fetch("executable")
+    end
+  end
+
+  def test_missing_local_runtime_does_not_fall_back_to_a_nix_sdk
+    with_local_runtime_path do
+      ENV["PATH"] = ""
+      _, error = capture_io { assert_raises(SystemExit) { BP.lock_ruby_bindir } }
+      assert_includes error, "no project Ruby on PATH"
+    end
+  end
+
+  def test_incompatible_local_runtime_is_reported_without_replacement
+    with_local_runtime_path do
+      write(".ruby-version", "999.999.0\n")
+      _, error = capture_io { assert_raises(SystemExit) { BP.lock_ruby_bindir } }
+      assert_includes error, "conflicts with project Ruby 999.999.0"
+    end
+  end
+
   def test_empty_lock_run_configuration_is_a_yaml_mapping
     config_dir = File.join(@dir, "native-config")
     BP.write_lock_run_config(config_dir)
