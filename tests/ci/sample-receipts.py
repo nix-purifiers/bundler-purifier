@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import uuid
 
 
 def main():
@@ -60,7 +61,17 @@ def main():
         for name in ("fixture-app", "fixture-library-tests", "real-lobsters-app", "real-lobsters"):
             attr = f".#checks.{system}.{name}"
             print(f"== rebuilding {attr}", flush=True)
-            drv = run(name + "-drv", ["nix", "eval", "--raw", attr + ".drvPath"])
+            base_drv = run(name + "-base-drv", ["nix", "eval", "--raw", attr + ".drvPath"])
+            # Native extension installers can retain build-directory details.
+            # Tier 2 needs actual successful execution, not byte reproducibility.
+            # A fresh derivation executes the unchanged build phases without
+            # comparing unrelated prior output bytes or accepting substitution.
+            execution_id = uuid.uuid4().hex
+            expression = (
+                f'(builtins.getFlake {json.dumps(str(repo))}).checks.{system}.{name}'
+                f'.overrideAttrs (_: {{ tier2ExecutionId = "{execution_id}"; }})'
+            )
+            drv = run(name + "-drv", ["nix", "eval", "--raw", "--impure", "--expr", f"({expression}).drvPath"])
             derivation = run(name + "-derivation", ["nix", "derivation", "show", drv], True)
             # Nix's versioned JSON uses store-relative keys; older releases
             # return an unwrapped map keyed by the absolute derivation path.
@@ -70,16 +81,17 @@ def main():
                 native_drv = derivation[drv]
             if native_drv["system"] != system:
                 raise RuntimeError(f"{name}: derivation does not target the native host")
-            # --rebuild requires an existing output. Materialize first, then
-            # demand actual execution instead of substitution for the receipt.
-            run(name + "-prepare", ["nix", "build", "--no-link", attr])
-            built = run(name + "-rebuild", ["nix", "build", "--no-link", "--rebuild", "--json", "-L", attr], True)
+            built = run(name + "-build", ["nix", "build", "--no-link", "--impure", "--expr", expression, "--json", "-L"], True)
             if len(built) != 1 or built[0]["drvPath"] != drv:
                 raise RuntimeError(f"{name}: built derivation differs from the evaluated one")
             paths = list(built[0]["outputs"].values())
             info = run(name + "-outputs", ["nix", "path-info", "--json", *paths], True)
             run(name + "-log", ["nix", "log", drv])
-            report["checks"][name] = {"attribute": attr, "drvPath": drv, "build": built, "outputInfo": info}
+            report["checks"][name] = {
+                "attribute": attr, "baseDrvPath": base_drv,
+                "executionExpression": expression, "executionId": execution_id,
+                "drvPath": drv, "build": built, "outputInfo": info,
+            }
             if name == "real-lobsters":
                 sample_output = Path(built[0]["outputs"]["out"]).read_text()
                 (results / "lobsters-runtime.txt").write_text(sample_output)
