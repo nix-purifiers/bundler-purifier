@@ -44,6 +44,9 @@ let
       input: "(${(import ./sdk-expression.nix input).expression})"
     ) projectNativeBuildInputs
   } ]";
+  projectToolPath = lib.optionalString (projectNativeBuildInputs != [ ]) (
+    "--prefix PATH : ${lib.escapeShellArg (lib.makeBinPath projectNativeBuildInputs)}"
+  );
 in
 assert
   purifierRef != null
@@ -72,6 +75,7 @@ stdenvNoCC.mkDerivation {
       --set BUNDLER_PURIFIER_LIB ${runtimeSource}/pkgs/cli \
       --set BUNDLER_PURIFIER_SHARED_FLAKE ${lib.escapeShellArg purifierRef} \
       --set BUNDLER_PURIFIER_NIXPKGS ${nixpkgsSource} \
+      ${projectToolPath} \
       --suffix PATH : ${
         lib.makeBinPath [
           gitMinimal
@@ -91,6 +95,7 @@ stdenvNoCC.mkDerivation {
       --set BUNDLER_PURIFIER_LIB ${runtimeSource}/pkgs/cli \
       --set BUNDLER_PURIFIER_SHARED_FLAKE ${lib.escapeShellArg purifierRef} \
       --set BUNDLER_PURIFIER_NIXPKGS ${nixpkgsSource} \
+      ${projectToolPath} \
       --suffix PATH : ${
         lib.makeBinPath [
           gitMinimal

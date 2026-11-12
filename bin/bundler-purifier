@@ -432,6 +432,21 @@ module BundlerPurifier
     help.include?("--no-document") || help.include?("--[no-]document") ? ["--no-document"] : ["--no-rdoc", "--no-ri"]
   end
 
+  # Bundler is a locked tool dependency, separate from the project Ruby.
+  # A user's bundle launcher may supply its own gem path. When invoking the
+  # selected Ruby directly, stage that exact tool in the isolated capture
+  # environment instead of substituting an interpreter or launcher.
+  def ensure_lock_bundler(version, env, state)
+    env["BUNDLER_PURIFIER_BUNDLER_VERSION"] = version
+    _, _, status = Open3.capture3(env, File.join(lock_ruby_bindir, "ruby"), "-rrubygems", "-e",
+      'Gem.bin_path("bundler", "bundle", ENV.fetch("BUNDLER_PURIFIER_BUNDLER_VERSION"))')
+    return if status.success?
+    lock_bundler(version, env, state)
+    archive = File.join(state, "bundler-fetch", "bundler-#{version}.gem")
+    run!(env, File.join(lock_ruby_bindir, "ruby"), File.join(lock_ruby_bindir, "gem"),
+         "install", "--local", *native_gem_install_flags, "--install-dir", env.fetch("GEM_HOME"), archive, chdir: root)
+  end
+
   def native_bundle!(env, *arguments, persist_lock: false)
     if (@input_views || []).empty?
       run!(env, File.join(lock_ruby_bindir, "ruby"), "-rrubygems", "-e",
@@ -469,7 +484,7 @@ module BundlerPurifier
       write_lock_run_config(env["BUNDLE_APP_CONFIG"])
       existing_marker = File.file?(gemfile_lock_path) && !File.read(gemfile_lock_path).lstrip.start_with?("---") && Bundler::LockfileParser.new(File.read(gemfile_lock_path)).bundler_version&.to_s
       native_sdk = existing_marker ? { "version" => existing_marker, "lockCommand" => "lock" } : native_bundler_capabilities(env).merge("observed" => true)
-      env["BUNDLER_PURIFIER_BUNDLER_VERSION"] = native_sdk.fetch("version") if native_sdk["observed"]
+      ensure_lock_bundler(native_sdk.fetch("version"), env, state)
       if native_sdk["format"] == "yaml"
         # Native Git checkouts retain their bare cache as origin. Keep that
         # owned cache available across separate capture invocations.
@@ -649,7 +664,7 @@ module BundlerPurifier
     # Fetch exact SDK bytes through the host helper, without asking an EOL
     # client to load today's complete registry index. Identity comes from
     # the observed native SDK, and the consumer still installs it natively.
-    File.binwrite(path, Gem::RemoteFetcher.fetcher.fetch_path("https://rubygems.org/gems/#{file}"))
+    File.binwrite(path, Gem::RemoteFetcher.fetcher.fetch_path("https://rubygems.org/gems/#{file}")) unless File.file?(path)
     spec = Gem::Package.new(path).spec
     fail!("downloaded Bundler gem does not match the selected native SDK") unless spec.name == "bundler" && spec.version.to_s == version
     sri(path)
