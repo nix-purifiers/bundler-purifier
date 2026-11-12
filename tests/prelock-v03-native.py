@@ -34,7 +34,7 @@ env.update(HOME=str(home), BUNDLER_PURIFIER_PROJECT_RUBY=str(a.sdk),
     BUNDLER_PURIFIER_SHARED_FLAKE='path:' + str(a.core),
     BUNDLER_PURIFIER_NIXPKGS='builtins.storePath ' + json.dumps(str(a.nixpkgs)))
 receipt = dict(complete=False, commands=[], scope='Local Ruby183/Gem101/Bundler artifact031 project, separately attested Gem135 publisher, ordinary Gem101 consumer.')
-receipt['sourceFiles'] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(list((root / 'pkgs/cli/tools').glob('*.rb')) + list((root / 'pkgs/cli').glob('*.nix')) + [root / 'bin/bundler-purifier', Path(__file__).resolve()])}
+receipt['sourceFiles'] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(list((root / 'pkgs/cli/tools').glob('*.rb')) + list((root / 'pkgs/cli').glob('*.nix')) + list((root / 'lib-overlays/default').glob('*.nix')) + list((root / 'pkgs/build-bundler-project').glob('*.nix')) + [root / 'bin/bundler-purifier', Path(__file__).resolve()])}
 if a.core_identity:
     import re
     identity = json.loads(a.core_identity.read_text())
