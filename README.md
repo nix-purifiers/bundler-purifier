@@ -201,6 +201,7 @@ Select these SDKs explicitly through their CLI variants on x86_64-linux:
 | CLI check attribute | Project Ruby | RubyGems | Bundler artifact | Native JSON |
 | --- | --- | --- | --- | --- |
 | `ruby183-bundler031-cli` | 1.8.3 | 1.0.1 | 0.3.1 | 1.1.3 |
+| `ruby183-gem095-bundler031-cli` | 1.8.3 | 0.9.5 | 0.3.1 | 1.1.3 |
 | `ruby184-bundler08-cli` | 1.8.4 | 1.3.5 | 0.8.1 | 1.8.6 |
 
 Both Ruby releases lack `RUBY_PATCHLEVEL`; neither is p0. The original
@@ -237,6 +238,25 @@ SDK recipe/reference form across producer and consumer: a derivation and
 `builtins.storePath` of the same SDK bytes carry different dependency
 contexts and cannot reuse each other's numeric catalog entries. Other
 profiles retain the default version scheme.
+
+The RubyGems 0.9.5 variant uses the same explicit pre-lockfile workflow.
+Its original installer requires executable payloads under `bin`; projects
+and input archives with another executable directory are rejected. It has
+no generated `.require_paths` marker. Packaging converts an installed
+platform string through the SDK's public `Gem::Platform.new` API, preserving
+the exact coordinate and requiring a matching native target.
+
+For publication from this variant, select an independent original RubyGems
+1.0.1 index SDK. The project remains identified as RubyGems 0.9.5:
+
+```sh
+index_sdk="$(nix build --no-link --print-out-paths \
+  "$purifier#checks.x86_64-linux.ruby183-bundler031-sdk")"
+export BUNDLER_PURIFIER_LEGACY_INDEX_RUBY_EXPRESSION="builtins.storePath \"$index_sdk\""
+```
+
+Nix builder callers pass `legacyIndexRuby = indexSdk;`. The existing
+RubyGems 1.0.1 variant continues to use its project SDK by default.
 
 RubyGems 1.0.1 cannot run the original Gemcutter publisher. Select its
 separately attested Ruby 1.8.4 / RubyGems 1.3.5 SDK when publishing:

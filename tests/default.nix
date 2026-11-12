@@ -579,6 +579,9 @@ in
       legacySSL = true;
     };
     native183Prelock = import ./ruby183-bundler031-sdk.nix { inherit pkgs olderRubySource; };
+    native183Gem095Prelock = import ./ruby183-gem095-bundler031-sdk.nix {
+      inherit pkgs olderRubySource;
+    };
     native184Prelock = import ./ruby184-bundler08-sdk.nix { inherit pkgs olderRubySource; };
     native184 = import ./ruby184-sdk.nix { inherit pkgs olderRubySource; };
     project184 = build {
@@ -923,6 +926,11 @@ in
           touch $out
         '';
     rubygems137-update = native186.rubygemsUpdate;
+    ruby183-gem095-bundler031-sdk = native183Gem095Prelock.sdk;
+    ruby183-gem095-bundler031-cli = cli.override {
+      projectRuby = native183Gem095Prelock.sdk;
+      projectNativeBuildInputs = [ native183Gem095Prelock.compiler ];
+    };
     ruby183-bundler031-sdk = native183Prelock.sdk;
     ruby183-bundler031-cli = cli.override {
       projectRuby = native183Prelock.sdk;

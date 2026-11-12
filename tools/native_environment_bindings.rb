@@ -51,7 +51,7 @@ module PurifierNativeEnvironmentBindings
       return
     end
     gem_version = defined?(Gem::VERSION) ? Gem::VERSION : Gem::RubyGemsVersion
-    legacy = !defined?(Gem::VERSION) && gem_version == "1.0.1" && RUBY_VERSION == "1.8.3"
+    legacy = !defined?(Gem::VERSION) && ["1.0.1", "0.9.5"].include?(gem_version) && RUBY_VERSION == "1.8.3"
     raise "bundler-purifier: unsupported native RubyGems binding interface" unless legacy || gem_version == "1.3.5"
     if operation != "runtime"
       gem "bundler", legacy ? "= 0.3.1" : "= 0.8.1"

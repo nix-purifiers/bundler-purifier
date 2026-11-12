@@ -311,6 +311,22 @@ jobs:
           python3 tests/prelock-v03-native.py --sdk "${native[0]}" --cli "${native[1]}/bin/bundler-purifier" --publisher-sdk "${native[2]}" --core "$core_source" --core-identity "$RUNNER_TEMP/ruby183-core-identity.json" --nixpkgs "$nixpkgs_source" --work "$RUNNER_TEMP/bundler031-native-evidence"
           python3 tests/prelock-input.py --sdk-profile bundler031 --provider "$RUNNER_TEMP/bundler031-native-evidence/project" --cli "${native[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler031-input-evidence"
 
+      - name: Ruby 1.8.3 with RubyGems 0.9.5 native frontend
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        run: |
+          native095_paths=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby183-gem095-bundler031-sdk .#checks.x86_64-linux.ruby183-gem095-bundler031-cli)
+          mapfile -t native095 <<< "$native095_paths"
+          test "${#native095[@]}" -eq 2
+          test -x "${native095[0]}/bin/ruby"
+          test -x "${native095[1]}/bin/bundler-purifier"
+          index_sdk=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby183-bundler031-sdk)
+          publisher_sdk=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby184-bundler08-sdk)
+          core_source=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$RUNNER_TEMP/ruby183-context.json")
+          nixpkgs_source=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["nixpkgs"])' "$RUNNER_TEMP/ruby183-context.json")
+          python3 tests/prelock-v03-native.py --sdk "${native095[0]}" --cli "${native095[1]}/bin/bundler-purifier" --publisher-sdk "$publisher_sdk" --index-sdk "$index_sdk" --rubygems-version 0.9.5 --core "$core_source" --core-identity "$RUNNER_TEMP/ruby183-core-identity.json" --nixpkgs "$nixpkgs_source" --work "$RUNNER_TEMP/bundler031-gem095-native-evidence"
+          export BUNDLER_PURIFIER_LEGACY_INDEX_RUBY_EXPRESSION="builtins.storePath \"$index_sdk\""
+          python3 tests/prelock-input.py --sdk-profile bundler031-gem095 --provider "$RUNNER_TEMP/bundler031-gem095-native-evidence/project" --cli "${native095[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler031-gem095-input-evidence"
+
       - name: Retain historical incoming composition receipts
         if: always() && runner.os == 'Linux' && runner.arch == 'X64'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -319,6 +335,8 @@ jobs:
           path: |
             ${{ runner.temp }}/bundler031-*-evidence/receipt.json
             ${{ runner.temp }}/bundler031-*-evidence/logs/*
+            ${{ runner.temp }}/bundler031-gem095-native-evidence/published-archives/*
+            ${{ runner.temp }}/bundler031-gem095-native-evidence/platform-evidence/*
             ${{ runner.temp }}/ruby183-context.json
             ${{ runner.temp }}/ruby183-core-identity.json
             ${{ runner.temp }}/bundler08-*-evidence/receipt.json
