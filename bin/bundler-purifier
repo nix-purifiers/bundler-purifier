@@ -426,8 +426,15 @@ module BundlerPurifier
     marker || recorded || fail!("Gemfile.lock has no BUNDLED WITH and #{lock_name} lacks bundlerVersion; recapture with the intended native SDK using bundler-purifier lock --force")
   end
 
+  # A gem executable may be a shell launcher. Enter RubyGems through its
+  # native runner API while preserving the selected Ruby and its libraries.
+  def native_gem_command(*arguments)
+    [File.join(lock_ruby_bindir, "ruby"), "-rrubygems", "-rrubygems/gem_runner", "-e",
+     "Gem::GemRunner.new.run(ARGV)", "--", *arguments]
+  end
+
   def native_gem_install_flags
-    help, status = Open3.capture2(File.join(lock_ruby_bindir, "ruby"), File.join(lock_ruby_bindir, "gem"), "help", "install")
+    help, status = Open3.capture2(*native_gem_command("help", "install"))
     fail!("could not inspect the selected native RubyGems install command") unless status.success?
     help.include?("--no-document") || help.include?("--[no-]document") ? ["--no-document"] : ["--no-rdoc", "--no-ri"]
   end
@@ -443,8 +450,8 @@ module BundlerPurifier
     return if status.success?
     lock_bundler(version, env, state)
     archive = File.join(state, "bundler-fetch", "bundler-#{version}.gem")
-    run!(env, File.join(lock_ruby_bindir, "ruby"), File.join(lock_ruby_bindir, "gem"),
-         "install", "--local", *native_gem_install_flags, "--install-dir", env.fetch("GEM_HOME"), archive, chdir: root)
+    run!(env, *native_gem_command("install", "--local", *native_gem_install_flags,
+         "--install-dir", env.fetch("GEM_HOME"), archive), chdir: root)
   end
 
   def native_bundle!(env, *arguments, persist_lock: false)
@@ -781,9 +788,9 @@ module BundlerPurifier
     built = capture!("nix-build", realize, "-A", "gemCache", *realize_args,
                      "--out-link", File.join(state_dir, "gem-cache")).strip
     bundler_home = File.join(state_dir, "bundler")
-    run!({}, File.join(lock_ruby_bindir, "ruby"), File.join(lock_ruby_bindir, "gem"), "install", "--local", *native_gem_install_flags,
+    run!({}, *native_gem_command("install", "--local", *native_gem_install_flags,
          "--install-dir", bundler_home, "--bindir", File.join(bundler_home, "bin"),
-         File.join(built, "bundler-#{bundler_version}.gem"), chdir: root)
+         File.join(built, "bundler-#{bundler_version}.gem")), chdir: root)
     locked_env = { "GEM_HOME" => bundler_home, "GEM_PATH" => bundler_home,
                    "BUNDLER_PURIFIER_BUNDLER_VERSION" => bundler_version,
                    "PATH" => "#{lock_ruby_bindir}:#{ENV["PATH"]}" }
