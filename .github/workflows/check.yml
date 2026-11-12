@@ -16,6 +16,37 @@ permissions:
   contents: read
 
 jobs:
+  original-sdk-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Test bounded diagnostic collection
+        run: python3 -B -m unittest discover -s tests/ci -p 'test_diagnostic_*.py'
+      - name: Retain three original SDK outputs without changing them
+        shell: bash
+        run: |
+          evidence="$RUNNER_TEMP/original-sdk-diagnostic"
+          mkdir -p "$evidence"
+          git rev-parse HEAD > "$evidence/source-revision"
+          git status --porcelain > "$evidence/source-status"
+          nix build --no-link .#checks.x86_64-linux.ruby183-gem095-bundler031-sdk
+          nix build --impure --no-link --json --expr \
+            '(import (builtins.getFlake (toString ./.)).inputs.nixpkgs { system = "x86_64-linux"; }).nix' \
+            > "$evidence/canonical-nix-build.json"
+          canonical_executable=$(python3 -c \
+            'import json,pathlib,sys; rows=json.load(open(sys.argv[1])); assert len(rows)==1; print((pathlib.Path(rows[0]["outputs"]["out"])/"bin/nix").resolve(strict=True))' \
+            "$evidence/canonical-nix-build.json")
+          python3 -B tests/ci/collect-sdk-bytes.py "$evidence/bytes" "$canonical_executable"
+      - name: Retain original SDK diagnostic bytes and receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: original-sdk-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/original-sdk-diagnostic
+          if-no-files-found: error
+
   check:
     strategy:
       fail-fast: false
@@ -322,6 +353,22 @@ jobs:
           python3 tests/prelock-v03-native.py --sdk "${native[0]}" --cli "${native[1]}/bin/bundler-purifier" --publisher-sdk "${native[2]}" --core "$core_source" --core-identity "$RUNNER_TEMP/ruby183-core-identity.json" --nixpkgs "$nixpkgs_source" --work "$RUNNER_TEMP/bundler031-native-evidence"
           python3 tests/prelock-input.py --sdk-profile bundler031 --provider "$RUNNER_TEMP/bundler031-native-evidence/project" --cli "${native[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler031-input-evidence"
 
+      - name: Ruby 1.8.3 with RubyGems 0.9.5 native frontend
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        run: |
+          native095_paths=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby183-gem095-bundler031-sdk .#checks.x86_64-linux.ruby183-gem095-bundler031-cli)
+          mapfile -t native095 <<< "$native095_paths"
+          test "${#native095[@]}" -eq 2
+          test -x "${native095[0]}/bin/ruby"
+          test -x "${native095[1]}/bin/bundler-purifier"
+          index_sdk=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby183-bundler031-sdk)
+          publisher_sdk=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.ruby184-bundler08-sdk)
+          core_source=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"])' "$RUNNER_TEMP/ruby183-context.json")
+          nixpkgs_source=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["nixpkgs"])' "$RUNNER_TEMP/ruby183-context.json")
+          python3 tests/prelock-v03-native.py --sdk "${native095[0]}" --cli "${native095[1]}/bin/bundler-purifier" --publisher-sdk "$publisher_sdk" --index-sdk "$index_sdk" --rubygems-version 0.9.5 --core "$core_source" --core-identity "$RUNNER_TEMP/ruby183-core-identity.json" --nixpkgs "$nixpkgs_source" --work "$RUNNER_TEMP/bundler031-gem095-native-evidence"
+          export BUNDLER_PURIFIER_LEGACY_INDEX_RUBY_EXPRESSION="builtins.storePath \"$index_sdk\""
+          python3 tests/prelock-input.py --sdk-profile bundler031-gem095 --provider "$RUNNER_TEMP/bundler031-gem095-native-evidence/project" --cli "${native095[1]}/bin/bundler-purifier" --work "$RUNNER_TEMP/bundler031-gem095-input-evidence"
+
       - name: Retain historical incoming composition receipts
         if: always() && runner.os == 'Linux' && runner.arch == 'X64'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -330,6 +377,8 @@ jobs:
           path: |
             ${{ runner.temp }}/bundler031-*-evidence/receipt.json
             ${{ runner.temp }}/bundler031-*-evidence/logs/*
+            ${{ runner.temp }}/bundler031-gem095-native-evidence/published-archives/*
+            ${{ runner.temp }}/bundler031-gem095-native-evidence/platform-evidence/*
             ${{ runner.temp }}/ruby183-context.json
             ${{ runner.temp }}/ruby183-core-identity.json
             ${{ runner.temp }}/bundler08-*-evidence/receipt.json

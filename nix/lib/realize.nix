@@ -17,6 +17,7 @@
   purifierFlake,
   integrationTools ? ../../tools,
   rubyExpression ? "",
+  legacyIndexRubyExpression ? "",
   nativeBuildInputsExpression ? "[ ]",
 }:
 let
@@ -58,6 +59,16 @@ let
 in
 buildBundlerProject (
   projectRuby
+  // (
+    if legacyIndexRubyExpression == "" then
+      { }
+    else
+      {
+        legacyIndexRuby = import (
+          builtins.toFile "bundler-native-index-ruby.nix" legacyIndexRubyExpression
+        );
+      }
+  )
   // {
     nativeBuildInputs = import (
       builtins.toFile "bundler-native-build-inputs.nix" nativeBuildInputsExpression
