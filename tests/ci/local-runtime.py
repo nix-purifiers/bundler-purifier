@@ -125,6 +125,23 @@ def main():
             extension.write_bytes(original)
     shell = json.loads(run("shell", [*cli, "shell", "--", "bundle", "exec", "ruby", "-e", probe]))
     assert shell == observed, shell
+    if args.cli:
+        selected = run("shell-wrapper", [*cli, "shell", "--", "sh", "-c", "command -v bundle"]).strip()
+        assert selected == str(args.bundle.resolve()), selected
+        report["shellWrapper"] = selected
+        # After shell setup, a changed lock must reach the purifier wrapper's
+        # validation instead of silently invoking ordinary Bundler.
+        lock = project / "bundler-purifier.lock.json"
+        original_lock = lock.read_bytes()
+        try:
+            mutation = "import pathlib; p=pathlib.Path('bundler-purifier.lock.json'); p.write_bytes(b'{}')"
+            run("shell-stale-lock", [*cli, "shell", "--", "sh", "-c",
+                'python3 -c "$1"; exec bundle exec ruby -e "puts :unexpected_acceptance"',
+                "sh", mutation], succeeds=False)
+            error = (results / "shell-stale-lock.stderr").read_text()
+            assert "bundler-purifier:" in error, error
+        finally:
+            lock.write_bytes(original_lock)
     # A project constraint is an error, never a request to install Ruby.
     version_file = project / ".ruby-version"
     original_version = version_file.read_bytes() if version_file.exists() else None
