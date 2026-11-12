@@ -32,11 +32,12 @@ jobs:
           git rev-parse HEAD > "$evidence/source-revision"
           git status --porcelain > "$evidence/source-status"
           nix build --no-link .#checks.x86_64-linux.ruby183-gem095-bundler031-sdk
-          canonical_nix=$(nix build --impure --no-link --print-out-paths --expr \
-            '(import (builtins.getFlake (toString ./.)).inputs.nixpkgs { system = "x86_64-linux"; }).nix')
+          nix build --impure --no-link --json --expr \
+            '(import (builtins.getFlake (toString ./.)).inputs.nixpkgs { system = "x86_64-linux"; }).nix' \
+            > "$evidence/canonical-nix-build.json"
           canonical_executable=$(python3 -c \
-            'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve(strict=True))' \
-            "$canonical_nix/bin/nix")
+            'import json,pathlib,sys; rows=json.load(open(sys.argv[1])); assert len(rows)==1; print((pathlib.Path(rows[0]["outputs"]["out"])/"bin/nix").resolve(strict=True))' \
+            "$evidence/canonical-nix-build.json")
           python3 -B tests/ci/collect-sdk-bytes.py "$evidence/bytes" "$canonical_executable"
       - name: Retain original SDK diagnostic bytes and receipts
         if: always()
