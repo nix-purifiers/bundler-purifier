@@ -834,9 +834,17 @@ module BundlerPurifier
     end
     read_lock!
     FileUtils.mkdir_p(state_dir)
-    prefetch([])
+    output = STDOUT.dup
+    begin
+      STDOUT.reopen(STDERR)
+      prefetch([])
+    ensure
+      STDOUT.reopen(output)
+      output.close
+    end
     command = args.empty? ? [ENV.fetch("SHELL", "bash")] : args
-    exec({ "PATH" => "#{lock_ruby_bindir}:#{ENV["PATH"]}" }, *command, chdir: root)
+    wrapper = ENV["BUNDLER_PURIFIER_BUNDLE"] || File.join(__dir__, "bundle")
+    exec({ "PATH" => "#{File.dirname(wrapper)}:#{lock_ruby_bindir}:#{ENV["PATH"]}" }, *command, chdir: root)
   end
 
   # Re-resolves Gemfile.lock with Bundler's own `bundle update`, for every
