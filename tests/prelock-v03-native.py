@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Actual early Bundler frontend and explicit separate native publisher."""
 import argparse
+from bounded_command import run as bounded_run
 import functools
 import hashlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,8 @@ import threading
 p = argparse.ArgumentParser()
 for name in ['sdk', 'publisher-sdk', 'core', 'nixpkgs', 'work']:
     p.add_argument('--' + name, required=True, type=Path)
+p.add_argument("--rubygems-version", choices=["1.0.1", "0.9.5"], default="1.0.1")
+p.add_argument("--index-sdk", type=Path)
 p.add_argument("--ruby", type=Path)
 p.add_argument("--cli", type=Path)
 p.add_argument("--archive", type=Path)
@@ -33,8 +36,10 @@ env.update(HOME=str(home), BUNDLER_PURIFIER_PROJECT_RUBY=str(a.sdk),
     BUNDLER_PURIFIER_LIB=str(root / 'nix/lib'), BUNDLER_PURIFIER_TOOLS=str(root / 'tools'),
     BUNDLER_PURIFIER_SHARED_FLAKE='path:' + str(a.core),
     BUNDLER_PURIFIER_NIXPKGS='builtins.storePath ' + json.dumps(str(a.nixpkgs)))
-receipt = dict(complete=False, commands=[], scope='Local Ruby183/Gem101/Bundler artifact031 project, separately attested Gem135 publisher, ordinary Gem101 consumer.')
-receipt['sourceFiles'] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(list((root / 'tools').glob('*.rb')) + list((root / 'nix/lib').glob('*.nix')) + [root / 'bin/bundler-purifier', Path(__file__).resolve()])}
+if a.index_sdk:
+    env['BUNDLER_PURIFIER_LEGACY_INDEX_RUBY_EXPRESSION'] = 'builtins.storePath ' + json.dumps(str(a.index_sdk))
+receipt = dict(complete=False, commands=[], scope='Local Ruby183/Gem' + a.rubygems_version + '/Bundler artifact031 project, separately attested Gem135 publisher and native index SDK, ordinary same-version consumer.')
+receipt['sourceFiles'] = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(list((root / 'tools').glob('*.rb')) + list((root / 'nix/lib').glob('*.nix')) + [root / 'bin/bundler-purifier', root / 'tests/bounded_command.py', Path(__file__).resolve()])}
 if a.core_identity:
     import re
     identity = json.loads(a.core_identity.read_text())
@@ -49,7 +54,7 @@ else:
 
 
 def run(label, argv, cwd, environment=None, success=True, reason=None):
-    result = subprocess.run(list(map(str, argv)), cwd=cwd, env=environment or env, capture_output=True, timeout=1800)
+    result = bounded_run(list(map(str, argv)), cwd=cwd, env=environment or env, timeout=1800, output_limit=32 * 1024 * 1024)
     for stream, raw in [('stdout', result.stdout), ('stderr', result.stderr)]:
         (logs / (label + '.' + stream)).write_bytes(raw)
     receipt['commands'].append(dict(label=label, argv=list(map(str, argv)), exit=result.returncode,
@@ -79,7 +84,8 @@ if a.archive is None:
     assert a.archive.is_file()
 
 project = a.work / 'project'
-shutil.copytree(root / 'tests/fixtures/ruby183', project)
+shutil.copytree(root / ('tests/fixtures/ruby183-gem095' if a.rubygems_version == '0.9.5' else 'tests/fixtures/ruby183'), project)
+executable = 'bin/historical-greeting' if a.rubygems_version == '0.9.5' else 'exe/historical-greeting'
 (project / 'Gemfile').write_text('gem "json", "= 1.1.3"\n')
 (project / 'vendor/cache').mkdir(parents=True)
 shutil.copyfile(a.archive, project / 'vendor/cache/json-1.1.3-x86_64-linux.gem')
@@ -89,16 +95,25 @@ lock = project / 'bundler-purifier.lock.json'
 original = lock.read_bytes()
 document = json.loads(original)
 assert document['nativeResolution']['interface'] == 'environment-v03'
-assert document['nativeResolution']['sdk']['rubygemsReport'] == dict(name='Gem::RubyGemsVersion', value='1.0.1')
+assert document['nativeResolution']['sdk']['rubygemsReport'] == dict(name='Gem::RubyGemsVersion', value=a.rubygems_version)
 assert all(package['sourceKind'] == 'verified-input' for package in document['nativeResolution']['packages'])
 assert not (project / 'Gemfile.lock').exists()
 run('capture-noop', cli + ['lock'], project)
 assert lock.read_bytes() == original
 run('reject-missing-replay', cli + ['shell', 'ruby', '-e', 'raise "unexpected activation"'], project, success=False, reason='native working state is missing')
 run('prefetch', cli + ['prefetch'], project)
-assert b'42 on 1.8.3' in run('runtime', cli + ['shell', 'ruby', '-Ilib', 'exe/historical-greeting'], project)
+assert b'42 on 1.8.3' in run('runtime', cli + ['shell', 'ruby', '-Ilib', executable], project)
 assert b'ARGV-PASS' in run('runtime-argv', cli + ['shell', 'ruby', '-e', 'raise unless ARGV==["space value","$literal","--dash"];puts "ARGV-PASS"', 'space value', '$literal', '--dash'], project)
 run('reject-consumer-as-publisher', cli + ['publish'], project, success=False, reason='native SDK has no identity-bound publisher launcher')
+if a.rubygems_version == '0.9.5':
+    run('genuine-platform-type-and-target-controls', cli + ['shell', 'ruby', root / 'tests/native-gem095-platform.rb', a.work / 'platform-evidence'], project)
+    bad_project = a.work / 'non-bin-project'
+    shutil.copytree(root / 'tests/fixtures/ruby183', bad_project)
+    (bad_project / 'Gemfile').write_text('gem \"json\", \"= 1.1.3\"\n')
+    (bad_project / 'vendor/cache').mkdir(parents=True)
+    shutil.copyfile(a.archive, bad_project / 'vendor/cache/json-1.1.3-x86_64-linux.gem')
+    run('reject-native095-exe-layout', cli + ['lock'], bad_project, success=False, reason='native Gem095 executables require bin payloads')
+
 published = {}
 requests = []
 agents = []
@@ -158,6 +173,10 @@ try:
     assert publication['complete'] and publication['publisherSDK']['rubygemsReport'] == dict(name='Gem::VERSION', value='1.3.5')
     repository = Path(publication['repository'])
     archives = sorted((repository / 'gems').glob('*.gem'))
+    retained = a.work / 'published-archives'
+    retained.mkdir()
+    for archive in archives:
+        shutil.copyfile(archive, retained / archive.name)
     assert len(archives) == len(published) == 2 and agents == ['Gemcutter/0.2.0'] * 2
     assert all(published[hashlib.sha256(archive.read_bytes()).hexdigest()] == archive.read_bytes() for archive in archives)
     # Serve indexes from exactly the repository whose archives were published.
@@ -171,7 +190,7 @@ try:
     run('ordinary-install', [a.sdk / 'bin/gem', 'install', '--remote', '--no-rdoc', '--no-ri', '--include-dependencies', '--no-http-proxy', '--source', host, 'historical_greeting', '--version', version], a.work, ordinary)
     code = 'require "historical_greeting";raise unless HistoricalGreeting.answer==42;raise unless Gem.loaded_specs["historical_greeting"].full_gem_path.index(ENV["GEM_HOME"]+"/")==0;raise unless Gem.loaded_specs["json"].full_gem_path.index(ENV["GEM_HOME"]+"/")==0;puts "ORDINARY|#{RUBY_VERSION}|#{Gem::RubyGemsVersion}|42";puts File.read("/proc/self/maps").split("\\n").select{|line|line.include?("parser.so")}'
     output = run('ordinary-native-runtime', [a.sdk / 'bin/ruby', '-e', code], a.work, ordinary)
-    assert b'ORDINARY|1.8.3|1.0.1|42' in output
+    assert ('ORDINARY|1.8.3|' + a.rubygems_version + '|42').encode() in output
     assert str(a.work / 'gems/gems/json-').encode() in output
     parser = next((a.work / 'gems/gems').glob('json-*/ext/json/ext/parser.so'))
     body = next(archive.read_bytes() for archive in archives if archive.name.startswith('json-'))
@@ -186,7 +205,7 @@ try:
     try:
         run('relocated-reject-missing-replay', cli + ['shell', 'ruby', '-e', 'raise "unexpected activation"'], relocated, success=False, reason='native working state is missing')
         run('relocated-prefetch', cli + ['prefetch'], relocated)
-        assert b'42 on 1.8.3' in run('relocated-original-unavailable-runtime', cli + ['shell', 'ruby', '-Ilib', 'exe/historical-greeting'], relocated)
+        assert b'42 on 1.8.3' in run('relocated-original-unavailable-runtime', cli + ['shell', 'ruby', '-Ilib', executable], relocated)
     finally:
         hidden.rename(project)
     receipt.update(complete=True, nativeSDK=document['nativeResolution']['sdk'], publication=publication,
