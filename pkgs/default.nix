@@ -19,7 +19,7 @@ in
 
   # The bundler-purifier command.
   cli = callPackage ./cli {
-    version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ../version.txt);
+    version = import ./version.nix;
     inherit purifierRef;
     inherit (lib) purifier;
   };
