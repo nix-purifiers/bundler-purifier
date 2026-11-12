@@ -250,6 +250,7 @@ For publication from this variant, select an independent original RubyGems
 1.0.1 index SDK. The project remains identified as RubyGems 0.9.5:
 
 ```sh
+purifier=github:nix-purifiers/bundler-purifier
 index_sdk="$(nix build --no-link --print-out-paths \
   "$purifier#checks.x86_64-linux.ruby183-bundler031-sdk")"
 export BUNDLER_PURIFIER_LEGACY_INDEX_RUBY_EXPRESSION="builtins.storePath \"$index_sdk\""
