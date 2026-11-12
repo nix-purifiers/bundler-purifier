@@ -46,8 +46,8 @@ def main():
     environment.pop("BUNDLER_PURIFIER_PROJECT_RUBY", None)
     environment.pop("BUNDLER_PURIFIER_RUBY_EXPRESSION", None)
     if not args.cli:
-        environment.update(BUNDLER_PURIFIER_TOOLS=str(repo / "tools"),
-                           BUNDLER_PURIFIER_LIB=str(repo / "nix/lib"))
+        environment.update(BUNDLER_PURIFIER_TOOLS=str(repo / "pkgs/cli/tools"),
+                           BUNDLER_PURIFIER_LIB=str(repo / "pkgs/cli"))
     environment.update(BUNDLER_PURIFIER_NIXPKGS=args.nixpkgs,
                        BUNDLER_PURIFIER_SHARED_FLAKE=args.purifier)
     guards = results / "guards"
