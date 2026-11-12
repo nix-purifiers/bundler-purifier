@@ -16,7 +16,9 @@ import time
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime", type=Path, required=True)
-    parser.add_argument("--helper-ruby", type=Path, required=True)
+    parser.add_argument("--helper-ruby", type=Path)
+    parser.add_argument("--cli", type=Path)
+    parser.add_argument("--bundle", type=Path)
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--fixture", default="library")
     parser.add_argument("--native-json", action="store_true")
@@ -29,6 +31,10 @@ def main():
         parser.error("this Linux proof requires an actual non-store Ruby executable")
     if not args.nixpkgs or not args.purifier:
         parser.error("provide --nixpkgs and --purifier, or their BUNDLER_PURIFIER environment settings")
+    if not args.cli and not args.helper_ruby:
+        parser.error("provide --cli or --helper-ruby")
+    if args.cli and not args.bundle:
+        parser.error("the installed CLI proof requires --bundle from the same package")
     repo = Path(__file__).resolve().parents[2]
     results = args.results.resolve()
     results.mkdir(parents=True, exist_ok=False)
@@ -39,9 +45,10 @@ def main():
     environment = dict(os.environ)
     environment.pop("BUNDLER_PURIFIER_PROJECT_RUBY", None)
     environment.pop("BUNDLER_PURIFIER_RUBY_EXPRESSION", None)
-    environment.update(BUNDLER_PURIFIER_TOOLS=str(repo / "tools"),
-                       BUNDLER_PURIFIER_LIB=str(repo / "nix/lib"),
-                       BUNDLER_PURIFIER_NIXPKGS=args.nixpkgs,
+    if not args.cli:
+        environment.update(BUNDLER_PURIFIER_TOOLS=str(repo / "tools"),
+                           BUNDLER_PURIFIER_LIB=str(repo / "nix/lib"))
+    environment.update(BUNDLER_PURIFIER_NIXPKGS=args.nixpkgs,
                        BUNDLER_PURIFIER_SHARED_FLAKE=args.purifier)
     guards = results / "guards"
     guards.mkdir()
@@ -86,8 +93,9 @@ def main():
         assert (process.returncode == 0) == succeeds, stdout + stderr
         return stdout
 
-    helper = str(args.helper_ruby.resolve())
-    cli = [helper, str(repo / "bin/bundler-purifier")]
+    helper = str(args.helper_ruby.resolve()) if args.helper_ruby else None
+    cli = [str(args.cli.resolve())] if args.cli else [helper, str(repo / "bin/bundler-purifier")]
+    bundle = [str(args.bundle.resolve())] if args.cli else [helper, str(repo / "bin/bundle")]
     run("capture", [*cli, "lock", "--force"])
     run("prefetch", [*cli, "prefetch"])
     probe = 'require "json"; puts JSON.generate({"version"=>RUBY_VERSION,"executable"=>File.readlink("/proc/self/exe")})'
@@ -97,7 +105,7 @@ def main():
                  'abort "ambiguous native parser" unless paths.size==1; '
                  'puts JSON.generate({"version"=>RUBY_VERSION,"executable"=>File.readlink("/proc/self/exe"),'
                  '"json"=>JSON::VERSION,"parser"=>paths.first,"parserHash"=>Digest::SHA256.file(paths.first).hexdigest})')
-    observed = json.loads(run("wrapper", [helper, str(repo / "bin/bundle"), "exec", "ruby", "-e", probe]))
+    observed = json.loads(run("wrapper", [*bundle, "exec", "ruby", "-e", probe]))
     assert observed["executable"] == str(runtime), observed
     if args.native_json:
         assert Path(observed["parser"]).is_relative_to(project / "vendor/bundle"), observed
@@ -109,7 +117,7 @@ def main():
         original = extension.read_bytes()
         try:
             shutil.copyfile(args.incompatible_extension, extension)
-            output = run("incompatible-extension", [helper, str(repo / "bin/bundle"), "exec", "ruby", "-rjson", "-e", "puts 'unexpected ABI acceptance'"], succeeds=False)
+            output = run("incompatible-extension", [*bundle, "exec", "ruby", "-rjson", "-e", "puts 'unexpected ABI acceptance'"], succeeds=False)
             error = (results / "incompatible-extension.stderr").read_text()
             assert "LoadError" in error and "unexpected ABI acceptance" not in output, error
             report["incompatibleExtensionHash"] = hashlib.sha256(args.incompatible_extension.read_bytes()).hexdigest()
