@@ -328,6 +328,9 @@ in
   # The shell for working on Lobsters, which CI's walkthrough uses.
   real-lobsters-shell = lobstersBuild.devShell;
 
+  # Keep the actual upstream install independently rebuildable in native CI.
+  real-lobsters-app = lobstersBuild.packages.app;
+
   # Lobsters installs its bundle of 180 gems offline in the sandbox, with
   # Ruby 4.0 and Bundler 4.0, and Rails loads with it.
   real-lobsters =
@@ -338,7 +341,8 @@ in
       ''
         export HOME="$TMPDIR"
         cd ${lobstersBuild.packages.app}
-        bundle exec rails --version | tee "$out"
+        bundle exec ruby -rbundler -rjson -e 'puts JSON.generate(ruby: RUBY_VERSION, bundler: Bundler::VERSION, platform: RUBY_PLATFORM)' | tee "$out"
+        bundle exec rails --version | tee -a "$out"
         grep -q '^Rails ' "$out"
         # A gem that opens its library at run time finds it.
         bundle exec ruby -e 'require "vips"; puts "libvips #{Vips.version_string}"' | tee -a "$out"
