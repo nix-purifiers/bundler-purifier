@@ -68,7 +68,7 @@ def main():
             # comparing unrelated prior output bytes or accepting substitution.
             execution_id = uuid.uuid4().hex
             expression = (
-                f'(builtins.getFlake {json.dumps(str(repo))}).checks.{system}.{name}'
+                f'(builtins.getFlake {json.dumps(report["source"]["path"])}).checks.{system}.{name}'
                 f'.overrideAttrs (_: {{ tier2ExecutionId = "{execution_id}"; }})'
             )
             drv = run(name + "-drv", ["nix", "eval", "--raw", "--impure", "--expr", f"({expression}).drvPath"])
