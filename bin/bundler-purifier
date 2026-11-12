@@ -261,7 +261,7 @@ module BundlerPurifier
   def local_runtime_identity
     executable = File.join(lock_ruby_bindir, "ruby")
     observation = capture!(executable, "-rrbconfig", "-e",
-      'print [RUBY_VERSION, RUBY_PLATFORM, RbConfig::CONFIG["ruby_version"]].join("|")')
+      'config = defined?(RbConfig) ? RbConfig::CONFIG : Config::CONFIG; print [RUBY_VERSION, RUBY_PLATFORM, config["ruby_version"]].join("|")')
     { "executable" => executable, "executableHash" => sri(executable), "observation" => observation }
   end
 
