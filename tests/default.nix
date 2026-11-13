@@ -479,6 +479,13 @@ in
       nativeBuildInputs = [ ruby2025.stdenv.cc ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
+    native34Bundler27 = import ./ruby34-bundler27-sdk.nix { inherit pkgs; };
+    project34Bundler27 = build {
+      src = ./fixtures/ruby34-bundler27;
+      ruby = native34Bundler27;
+      nativeBuildInputs = [ pkgs.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
     rubies2017 = import ruby2017Source {
       system = "x86_64-linux";
       config = { };
@@ -775,6 +782,22 @@ in
           touch "$out"
         '';
     ruby33-sdk = ruby2025.ruby_3_3;
+    ruby34-bundler27-sdk = native34Bundler27;
+    ruby34-bundler27-cli = cli.override {
+      projectRuby = native34Bundler27;
+      projectNativeBuildInputs = [ pkgs.stdenv.cc ];
+    };
+    ruby34-bundler27-native-extension = project34Bundler27.tests;
+    ruby34-bundler27-app = project34Bundler27.packages.app;
+    ruby34-bundler27-repository = project34Bundler27.release.projections.rubygems;
+    ruby34-bundler27-input-composition =
+      pkgs.runCommand "ruby34-bundler27-native-input-composition"
+        { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native34Bundler27} ${project34Bundler27.release.projections.rubygems} ${project34Bundler27.release.projections.rubygems.catalog} 3.4.11 2.7.2
+          touch "$out"
+        '';
     ruby33-native-extension = project33.tests;
     ruby33-app = project33.packages.app;
     ruby33-repository = project33.release.projections.rubygems;
