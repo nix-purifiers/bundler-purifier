@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
         env = dict(environment)
         if views is not None:
             env['BUNDLER_PURIFIER_INPUT_VIEWS'] = json.dumps(views)
-        result = subprocess.run([str(tools / 'bin/ruby'), str(root / 'tools/native_bundle_command.rb'), *arguments],
+        result = subprocess.run([str(tools / 'bin/ruby'), str(root / 'pkgs/cli/tools/native_bundle_command.rb'), *arguments],
                                 cwd=project, env=env, text=True, capture_output=True, timeout=90)
         assert (result.returncode == 0) == succeeds, result.stdout + result.stderr
         assert (project / 'Gemfile').read_text() == manifest
@@ -175,7 +175,7 @@ abort "SDK specification class changed" unless spec.class == Gem::Specification
 puts "NATIVE DEPENDENCY COLLECTION PASS"
 '''
     if expected_bundler == '0.9.9':
-        collection = 'require ' + json.dumps(str(root / 'tools/rubygems_inputs.rb')) + '\n' + collection
+        collection = 'require ' + json.dumps(str(root / 'pkgs/cli/tools/rubygems_inputs.rb')) + '\n' + collection
     assert run('exec', 'ruby', '-e', collection).strip() == 'NATIVE DEPENDENCY COLLECTION PASS'
 
     run('lock', '--local')

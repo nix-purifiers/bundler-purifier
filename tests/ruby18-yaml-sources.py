@@ -38,8 +38,8 @@ for mode in ['implicit','git']:
  env={k:v for k,v in os.environ.items() if not k.startswith(('GEM_','RUBY','BUNDLE_','BUNDLER_PURIFIER_'))}
  env.update(HOME=str(work/(mode+'-home')),PATH=str(sdk/'bin')+':'+os.environ['PATH'],GEM_HOME=str(work/(mode+'-gems')),BUNDLE_PATH=str(project/'vendor/bundle'),BUNDLE_CACHE_PATH=str(project/'vendor/cache'),BUNDLER_PURIFIER_BUNDLER_VERSION='0.9.26',BUNDLER_PURIFIER_INPUT_VIEWS=json.dumps(views),BUNDLER_PURIFIER_PERSIST_LOCK='1')
  pathlib.Path(env['HOME']).mkdir()
- for command in ['install','lock']:run(mode+'-'+command,[sdk/'bin/ruby',root/'tools/native_bundle_command.rb',command],project,env)
- snapshot=json.loads(run(mode+'-snapshot',[sdk/'bin/ruby',root/'tools/native_lock_snapshot.rb'],project,env))
+ for command in ['install','lock']:run(mode+'-'+command,[sdk/'bin/ruby',root/'pkgs/cli/tools/native_bundle_command.rb',command],project,env)
+ snapshot=json.loads(run(mode+'-snapshot',[sdk/'bin/ruby',root/'pkgs/cli/tools/native_lock_snapshot.rb'],project,env))
  assert snapshot['nativeHash']=='sha256-'+__import__('base64').b64encode(hashlib.sha256((project/'Gemfile.lock').read_bytes()).digest()).decode()
  assert snapshot['observed']['bundler']=='0.9.26'
  if mode=='git':
@@ -47,5 +47,5 @@ for mode in ['implicit','git']:
   assert nodes[0]['fields']['revision']==subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
  assert (project/'Gemfile').read_text()==manifest
  code='require "historical_greeting"; abort unless HistoricalGreeting.answer==42; '+('require "git_leaf"; abort unless GitLeaf.answer==17; ' if mode=='git' else '')+'puts "PASS"'
- assert run(mode+'-runtime',[sdk/'bin/ruby',root/'tools/native_bundle_command.rb','exec','ruby','-e',code],project,env).strip()=='PASS'
+ assert run(mode+'-runtime',[sdk/'bin/ruby',root/'pkgs/cli/tools/native_bundle_command.rb','exec','ruby','-e',code],project,env).strip()=='PASS'
 receipt['complete']=True;(work/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n');print('PASS native Git and implicit source snapshots and runtime')

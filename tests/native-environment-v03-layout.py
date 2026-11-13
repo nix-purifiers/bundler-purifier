@@ -55,7 +55,7 @@ for label in ['baseline', 'extra-directory', 'altered-wrapper', 'wrapper-mode',
     archives.mkdir()
     shutil.copyfile(args.archive, archives / '0.gem')
     (archives / 'inventory.tsv').write_text(hashlib.sha256(args.archive.read_bytes()).hexdigest() + '\t0.gem\n')
-    run(label + '-install', [args.sdk / 'bin/ruby', root / 'tools/native_environment_v03_install.rb', project, archives], project)
+    run(label + '-install', [args.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_v03_install.rb', project, archives], project)
     repository = project / 'vendor/gems'
     wrapper = repository / 'bin/edit_json.rb'
     assert wrapper.is_file()
@@ -85,7 +85,7 @@ for label in ['baseline', 'extra-directory', 'altered-wrapper', 'wrapper-mode',
         'bad-constraint': 'activation constraints do not resolve', 'bad-context': 'unsupported v03 contexts',
         'bad-system-policy': 'invalid v03 system-gems policy'}
     code = 'require "json";raise unless JSON.parse(%q({"answer":42}))["answer"]==42;puts "LAYOUT|#{RUBY_VERSION}|#{Gem::RubyGemsVersion}|42"' if success else 'puts "BAD-ACTIVATED"'
-    output = run(label + '-activation', [args.sdk / 'bin/ruby', root / 'tools/native_environment_exec.rb', project, args.sdk, '--', 'ruby', '-e', code], project, success, reasons.get(label))
+    output = run(label + '-activation', [args.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_exec.rb', project, args.sdk, '--', 'ruby', '-e', code], project, success, reasons.get(label))
     if success:
         assert b'LAYOUT|1.8.3|1.0.1|42' in output
     if label == 'wrapper-symlink':
@@ -104,7 +104,7 @@ for label, reason in [('changed-payload', 'installed payload differs'),
     archives.mkdir()
     shutil.copyfile(args.archive, archives / '0.gem')
     (archives / 'inventory.tsv').write_text(hashlib.sha256(args.archive.read_bytes()).hexdigest() + '\t0.gem\n')
-    run(label + '-install', [args.sdk / 'bin/ruby', root / 'tools/native_environment_v03_install.rb', project, archives], project)
+    run(label + '-install', [args.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_v03_install.rb', project, archives], project)
     package = next(project.glob('vendor/gems/gems/json-*'))
     if label == 'changed-payload':
         payload = package / 'lib/json.rb'
@@ -123,10 +123,10 @@ for label, reason in [('changed-payload', 'installed payload differs'),
         specification = next(project.glob('vendor/gems/specifications/*.gemspec'))
         specification.unlink()
         specification.symlink_to(outside)
-    run(label + '-observation', [args.sdk / 'bin/ruby', root / 'tools/native_environment_observe.rb', project], project, False, reason)
+    run(label + '-observation', [args.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_observe.rb', project], project, False, reason)
     if label == 'escaping-specification':
         assert not tripwire.exists()
-        run(label + '-activation', [args.sdk / 'bin/ruby', root / 'tools/native_environment_exec.rb', project, args.sdk, '--', 'ruby', '-e', 'puts "BAD-ACTIVATED"'], project, False, 'repository symlink')
+        run(label + '-activation', [args.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_exec.rb', project, args.sdk, '--', 'ruby', '-e', 'puts "BAD-ACTIVATED"'], project, False, 'repository symlink')
         assert not tripwire.exists()
 
 # A package without executables must preserve the original SDK guard exactly.
@@ -139,7 +139,7 @@ for label in ['no-bin', 'foreign-empty-bin']:
     archives.mkdir()
     shutil.copyfile(args.pure_archive, archives / '0.gem')
     (archives / 'inventory.tsv').write_text(hashlib.sha256(args.pure_archive.read_bytes()).hexdigest() + '\t0.gem\n')
-    run(label + '-install', [args.sdk / 'bin/ruby', root / 'tools/native_environment_v03_install.rb', project, archives], project)
+    run(label + '-install', [args.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_v03_install.rb', project, archives], project)
     repository = project / 'vendor/gems'
     assert not (repository / 'bin').exists()
     guard = 'require "rubygems";gem "bundler", "= 0.3.1";require "bundler";raise unless Bundler::Repository.new(ARGV[0]).valid?;puts "ORIGINAL-GUARD-PASS"'
@@ -147,7 +147,7 @@ for label in ['no-bin', 'foreign-empty-bin']:
     if label == 'foreign-empty-bin':
         (repository / 'bin').mkdir()
     code = 'require "numeric_leaf";puts "PURE-ACTIVATED"' if label == 'no-bin' else 'puts "BAD-ACTIVATED"'
-    output = run(label + '-activation', [args.sdk / 'bin/ruby', root / 'tools/native_environment_exec.rb', project, args.sdk, '--', 'ruby', '-e', code], project, label == 'no-bin', 'foreign v03 bin directory' if label == 'foreign-empty-bin' else None)
+    output = run(label + '-activation', [args.sdk / 'bin/ruby', root / 'pkgs/cli/tools/native_environment_exec.rb', project, args.sdk, '--', 'ruby', '-e', code], project, label == 'no-bin', 'foreign v03 bin directory' if label == 'foreign-empty-bin' else None)
     if label == 'no-bin':
         assert b'PURE-ACTIVATED' in output
 receipt['complete'] = True

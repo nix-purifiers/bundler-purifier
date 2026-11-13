@@ -96,8 +96,8 @@ let
         chmod u+w Gemfile Gemfile.lock
         export BUNDLER_PURIFIER_INPUT_VIEWS="$inputViews"
         export BUNDLER_PURIFIER_PERSIST_LOCK=1
-        ruby ${../tools}/native_bundle_command.rb lock --full-index
-        BUNDLE_CACHE_PATH="$TMPDIR/native-cache" ruby ${../tools}/native_bundle_command.rb cache --all-platforms --no-install
+        ruby ${../pkgs/cli/tools}/native_bundle_command.rb lock --full-index
+        BUNDLE_CACHE_PATH="$TMPDIR/native-cache" ruby ${../pkgs/cli/tools}/native_bundle_command.rb cache --all-platforms --no-install
         ruby ${recordLock} ${../bin/bundler-purifier}
       '';
   consumer = build {

@@ -54,7 +54,7 @@ def run(label, arguments, *, cwd=project, environment=None, success=True, native
     assert len(receipt['commands']) < 16
     argv = [str(executable or (args.sdk / 'bin/ruby'))]
     if native and executable is None:
-        argv += [str(root / 'tools/native_bundle_command.rb')]
+        argv += [str(root / 'pkgs/cli/tools/native_bundle_command.rb')]
     argv += list(map(str, arguments))
     stdout, stderr = logs / (label + '.stdout'), logs / (label + '.stderr')
     with stdout.open('wb') as out, stderr.open('wb') as err:
@@ -140,7 +140,7 @@ if args.codec:
     captured = work / 'captured'
     capture_env = dict(env, BUNDLER_PURIFIER_INPUT_VIEWS='[]', SOURCE_DATE_EPOCH='1')
     run('capture-runtime-archives', ['exec', 'ruby', '-r', args.codec,
-        root / 'tools/capture_gems.rb', captured], environment=capture_env)
+        root / 'pkgs/cli/tools/capture_gems.rb', captured], environment=capture_env)
     archives = list(captured.glob('*.gem'))
     assert len(archives) == 2
     destination = work / 'recaptured-ordinary'

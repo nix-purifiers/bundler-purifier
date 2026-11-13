@@ -136,9 +136,9 @@ with tempfile.TemporaryDirectory(prefix="native-environment-contract-") as tempo
     for label, value, expected in cases:
         document = temporary / (label + ".json")
         document.write_text(json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n")
-        ruby = subprocess.run([args.ruby, "-e", host, str(root / "tools/native_environment.rb"), str(document)], capture_output=True)
+        ruby = subprocess.run([args.ruby, "-e", host, str(root / "pkgs/cli/tools/native_environment.rb"), str(document)], capture_output=True)
         expression = ('let raw = builtins.readFile ' + str(document) + '; value = builtins.fromJSON raw; in '
-                      'raw == builtins.toJSON value + "\\n" && (import ' + str(root / 'nix/lib/native-environment.nix')
+                      'raw == builtins.toJSON value + "\\n" && (import ' + str(root / 'lib-overlays/default/native-environment.nix')
                       + ' { lib = import ' + str(args.nix_lib) + '; } value).valid')
         nix = subprocess.run(["nix", "eval", "--impure", "--json", "--expr", expression], capture_output=True)
         assert ruby.returncode in (0, 1), (label, ruby.stderr.decode())
@@ -168,7 +168,7 @@ end
         mutate(candidate)
         candidate_file = temporary / ("compare-" + label + ".json")
         candidate_file.write_text(json.dumps(candidate))
-        result = subprocess.run([args.ruby, "-e", comparison_host, str(root / "tools/native_environment.rb"),
+        result = subprocess.run([args.ruby, "-e", comparison_host, str(root / "pkgs/cli/tools/native_environment.rb"),
                                  str(baseline_file), str(candidate_file)], capture_output=True)
         assert result.returncode in (0, 1), (label, result.stderr.decode())
         assert (result.returncode == 0) == expected, (label, result.stderr.decode())
@@ -179,7 +179,7 @@ end
     records += [snapshot("x", b"\xff\xc0\x80\n"), snapshot("x", b"")]
     document = temporary / "byte-corpus.json"
     document.write_text(json.dumps(records))
-    expression = 'map (v: builtins.stringLength (import ' + str(root / 'nix/lib/native-environment-bytes.nix') + ' v)) (builtins.fromJSON (builtins.readFile ' + str(document) + '))'
+    expression = 'map (v: builtins.stringLength (import ' + str(root / 'lib-overlays/default/native-environment-bytes.nix') + ' v)) (builtins.fromJSON (builtins.readFile ' + str(document) + '))'
     nix = subprocess.run(["nix", "eval", "--impure", "--json", "--expr", expression], capture_output=True)
     assert nix.returncode == 0, nix.stderr.decode()
     assert json.loads(nix.stdout) == [record["size"] for record in records]

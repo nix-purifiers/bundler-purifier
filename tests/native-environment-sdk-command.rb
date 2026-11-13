@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 require "rbconfig"
-require_relative "../tools/native_environment_sdk"
+require_relative "../pkgs/cli/tools/native_environment_sdk"
 
 runner = PurifierNativeEnvironmentSDK
 ruby = RbConfig.ruby

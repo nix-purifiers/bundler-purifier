@@ -9,7 +9,9 @@
   name ? "bundler-native-environment-candidate",
 }:
 let
-  validation = import ./native-environment.nix { inherit (pkgs) lib; } resolution;
+  validation = import ../../lib-overlays/default/native-environment.nix {
+    inherit (pkgs) lib;
+  } resolution;
   record = pkgs.writeText "native-resolution.json" (builtins.toJSON resolution + "\n");
   archiveMap = pkgs.writeText "native-archives.json" (builtins.toJSON archives);
   closure = pkgs.closureInfo { rootPaths = [ sdk ]; };
@@ -25,7 +27,7 @@ pkgs.runCommand name
   ''
     export HOME=$TMPDIR NIX_CONFIG='experimental-features = nix-command'
     mkdir -p "$out"
-    ruby ${../../tools}/native_environment_prepare.rb regenerate \
+    ruby ${../cli/tools}/native_environment_prepare.rb regenerate \
       ${record} ${sdk} ${archiveMap} "$out/project" ${closure}/store-paths \
       > "$out/native-resolution.json"
   ''

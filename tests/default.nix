@@ -199,8 +199,8 @@ in
         BUNDLER_PURIFIER_RUBYGEMS_TOOL = "${sharedTools}/rubygems_repository.rb";
       }
       ''
-            mkdir -p tools tests
-            cp -r ${../tools}/. tools/
+            mkdir -p pkgs/cli/tools tests
+            cp -r ${../pkgs/cli/tools}/. pkgs/cli/tools/
             cp ${./native-json.rb} tests/native-json.rb
             export HOME="$TMPDIR"
             for library in json psych pathname stringio; do
@@ -706,7 +706,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native20.sdk} ${project20.release.projections.rubygems} ${project20.release.projections.rubygems.catalog} 2.0.0
-          ${native20.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
+          ${native20.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/pkgs/cli/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby20-cli = cli.override {
@@ -722,7 +722,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native21.sdk} ${project21.release.projections.rubygems} ${project21.release.projections.rubygems.catalog} 2.1.3
-          ${native21.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
+          ${native21.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/pkgs/cli/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby21-cli = cli.override {
@@ -1051,7 +1051,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native19.sdk} ${project19.release.projections.rubygems} ${project19.release.projections.rubygems.catalog} 1.9.3
-          ${native19.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
+          ${native19.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/pkgs/cli/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby19-cli = cli.override {
