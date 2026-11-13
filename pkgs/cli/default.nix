@@ -44,6 +44,9 @@ let
       input: "(${(import ./sdk-expression.nix input).expression})"
     ) projectNativeBuildInputs
   } ]";
+  projectToolPath = lib.optionalString (projectNativeBuildInputs != [ ]) (
+    "--prefix PATH : ${lib.escapeShellArg (lib.makeBinPath projectNativeBuildInputs)}"
+  );
 in
 assert
   purifierRef != null
@@ -63,6 +66,7 @@ stdenvNoCC.mkDerivation {
     # git sources, and nix-prefetch-git hashes them for the lock.
     makeWrapper ${ruby}/bin/ruby "$out/bin/bundler-purifier" \
       --add-flags "$out/libexec/bundler-purifier.rb" \
+      --set BUNDLER_PURIFIER_BUNDLE "$out/bin/bundle" \
       --set BUNDLER_PURIFIER_TOOLS ${./tools} \
       --set BUNDLER_PURIFIER_PROJECT_RUBY ${if projectRuby == null then "''" else projectRuby} \
       --set BUNDLER_PURIFIER_RUBY_EXPRESSION ${lib.escapeShellArg projectRubyExpression} \
@@ -71,6 +75,7 @@ stdenvNoCC.mkDerivation {
       --set BUNDLER_PURIFIER_LIB ${runtimeSource}/pkgs/cli \
       --set BUNDLER_PURIFIER_SHARED_FLAKE ${lib.escapeShellArg purifierRef} \
       --set BUNDLER_PURIFIER_NIXPKGS ${nixpkgsSource} \
+      ${projectToolPath} \
       --suffix PATH : ${
         lib.makeBinPath [
           gitMinimal
@@ -90,6 +95,7 @@ stdenvNoCC.mkDerivation {
       --set BUNDLER_PURIFIER_LIB ${runtimeSource}/pkgs/cli \
       --set BUNDLER_PURIFIER_SHARED_FLAKE ${lib.escapeShellArg purifierRef} \
       --set BUNDLER_PURIFIER_NIXPKGS ${nixpkgsSource} \
+      ${projectToolPath} \
       --suffix PATH : ${
         lib.makeBinPath [
           gitMinimal

@@ -30,7 +30,13 @@ begin
   STDOUT.reopen(STDERR)
   lock = bp.read_lock!
   ready = File.join(bp.state_dir, "bundle-ready")
-  unless File.directory?(File.join(bp.state_dir, "bundler")) && File.file?(ready) && File.file?(File.join(bp.state_dir, "environment.json")) && File.read(ready) == lock.fetch("contentHash")
+  environment_path = File.join(bp.state_dir, "environment.json")
+  recorded_runtime = begin
+    JSON.parse(File.read(environment_path))["localRuntime"] if File.file?(environment_path)
+  rescue JSON::ParserError
+    nil
+  end
+  unless File.directory?(File.join(bp.state_dir, "bundler")) && File.file?(ready) && recorded_runtime == bp.local_runtime_identity && File.read(ready) == lock.fetch("contentHash")
     bp.prefetch([])
     File.write(ready, lock.fetch("contentHash"))
   end
