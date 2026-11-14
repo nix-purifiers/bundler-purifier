@@ -124,6 +124,29 @@ for label, mutate in [
     mutate(candidate)
     cases.append(('v03-' + label, candidate, False))
 
+# Exact additional Gem095 identity uses the SDK's actual marker inventory.
+v095 = copy.deepcopy(v03)
+v095['sdk']['rubygemsReport']['value'] = '0.9.5'
+for component in v095['sdk']['components']:
+    if component['name'] == 'rubygems':
+        component['version'] = '0.9.5'
+cases.append(('v095-valid', v095, True))
+for label, mutate in [
+    ('wrong-native-ruby', lambda v: v['sdk'].update(ruby='1.8.2')),
+    ('wrong-artifact', lambda v: v['sdk']['clientArtifact'].update(version='0.8.1')),
+    ('wrong-report-name', lambda v: v['sdk']['rubygemsReport'].update(name='Gem::VERSION')),
+    ('wrong-component', lambda v: v['sdk']['components'][1].update(version='1.0.1')),
+    ('unsupported-gem094', lambda v: v['sdk']['rubygemsReport'].update(value='0.9.4')),
+    ('foreign-marker', lambda v: v['snapshots'].append(snapshot('vendor/gems/gems/leaf-1.0.0/.require_paths', b'lib\n'))),
+    ('unsupported-executable-layout', lambda v: v['packages'][0].update(bindir='exe')),
+]:
+    candidate = copy.deepcopy(v095)
+    mutate(candidate)
+    cases.append(('v095-' + label, candidate, False))
+v095_paths = copy.deepcopy(v095)
+v095_paths['packages'][0]['requirePaths'] = ['lib', 'ext']
+cases.append(('v095-nondefault-require-path-no-marker', v095_paths, True))
+
 host = '''require ARGV.shift
 begin
   PurifierNativeEnvironment.validate!(PurifierNativeEnvironment.parse(File.binread(ARGV.shift)))

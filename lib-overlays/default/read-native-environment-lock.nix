@@ -208,6 +208,10 @@ let
     ) resolution.bindings
     && list value.projectSpecs
     && lib.all projectSpec value.projectSpecs
+    && (
+      value.nativeResolution.sdk.rubygemsReport.value != "0.9.5"
+      || lib.all (item: item.executables == [ ] || item.bindir == "bin") value.projectSpecs
+    )
     && unique (map (entry: entry.name) value.projectSpecs)
     && unique (map (entry: entry.path) value.projectSpecs)
     &&

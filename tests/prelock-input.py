@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 """Consume an unchanged Gemfile through an actual pinned native Nix input."""
 import argparse
+from bounded_command import run as bounded_run
 import hashlib
 import json
 import os
@@ -12,10 +13,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--provider', required=True, type=Path)
 parser.add_argument('--cli', required=True, type=Path)
 parser.add_argument('--work', required=True, type=Path)
-parser.add_argument('--sdk-profile', choices=['bundler08', 'bundler031'], default='bundler08')
+parser.add_argument('--sdk-profile', choices=['bundler08', 'bundler031', 'bundler031-gem095'], default='bundler08')
 parser.add_argument('--core-reference')
 args = parser.parse_args()
-legacy = args.sdk_profile == 'bundler031'
+legacy = args.sdk_profile.startswith('bundler031')
+gem095 = args.sdk_profile == 'bundler031-gem095'
 root = Path(__file__).resolve().parent.parent
 args.work.mkdir()
 logs = args.work / 'logs'
@@ -35,10 +37,10 @@ shutil.copytree(args.provider, flake / 'provider', symlinks=True,
   deps=builtins.getFlake (builtins.unsafeDiscardStringContext ("path:"+f.outPath+"/tests/dependencies"));
   native=import (f.outPath+"/tests/%s") {inherit pkgs;olderRubySource=deps.inputs.older-ruby;};
   build=pkgs.callPackage (f.outPath+"/pkgs/build-bundler-project/default.nix") {inherit(f.inputs.purifier.lib) purifier;readLock=import (f.outPath+"/lib-overlays/default/read-lock.nix") {inherit(pkgs) lib;};};
-  project=build {src=./provider;ruby=native.sdk;};
+  project=build {src=./provider;ruby=native.sdk;%s};
  in {packages.x86_64-linux.default=project.packages.app;};
 }
-''' % (json.dumps('path:' + str(root)), ('inputs.core.url = ' + json.dumps(args.core_reference) + '; inputs.adapter.inputs.purifier.follows = "core";') if args.core_reference else '', 'ruby183-bundler031-sdk.nix' if legacy else 'ruby184-bundler08-sdk.nix'))
+''' % (json.dumps('path:' + str(root)), ('inputs.core.url = ' + json.dumps(args.core_reference) + '; inputs.adapter.inputs.purifier.follows = "core";') if args.core_reference else '', 'ruby183-gem095-bundler031-sdk.nix' if gem095 else ('ruby183-bundler031-sdk.nix' if legacy else 'ruby184-bundler08-sdk.nix'), 'legacyIndexRuby=(import (f.outPath+"/tests/ruby183-bundler031-sdk.nix") {inherit pkgs;olderRubySource=deps.inputs.older-ruby;}).sdk;' if gem095 else ''))
 project = args.work / 'project'
 project.mkdir()
 manifest = b'gem "historical_greeting"\n'
@@ -49,8 +51,8 @@ for label, command in [
     ('prefetch-declared-input', ['prefetch']),
     ('runtime-declared-input', ['shell', 'ruby', '-e',
         'require "historical_greeting";raise unless HistoricalGreeting.answer==42;puts "DECLARED|42|#{RUBY_VERSION}"'])]:
-    result = subprocess.run([str(args.cli)] + command, cwd=project,
-                            env=os.environ, capture_output=True, timeout=900)
+    result = bounded_run([str(args.cli)] + command, cwd=project,
+                            env=os.environ, timeout=900, output_limit=32 * 1024 * 1024)
     for suffix, data in [('stdout', result.stdout), ('stderr', result.stderr)]:
         (logs / (label + '.' + suffix)).write_bytes(data)
     receipt['commands'].append({'label': label, 'argv': command, 'exit': result.returncode,
