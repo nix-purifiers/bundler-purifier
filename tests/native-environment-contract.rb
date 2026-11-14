@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-require_relative "../tools/native_environment"
+require_relative "../pkgs/cli/tools/native_environment"
 
 contract = PurifierNativeEnvironment
 checks = 0

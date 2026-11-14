@@ -16,7 +16,7 @@ parser.add_argument("--archives", required=True, type=Path)
 parser.add_argument("--evidence", required=True, type=Path)
 args = parser.parse_args()
 args.evidence.mkdir()
-adapter = Path(__file__).resolve().parent.parent / "tools/native_environment_bindings.rb"
+adapter = Path(__file__).resolve().parent.parent / "pkgs/cli/tools/native_environment_bindings.rb"
 record = json.loads(args.capture.read_text())
 archives = json.loads(args.archives.read_text())
 commands = []

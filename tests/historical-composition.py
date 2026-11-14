@@ -29,7 +29,7 @@ args = parser.parse_args()
 tools, repository, catalog = args.tools, args.repository, args.catalog
 expected_ruby, expected_bundler = args.expected_ruby, args.expected_bundler
 extra_gem_path, versionless = args.extra_gem_path, args.versionless
-patchlevel, default_gem_version = {'1.8.4': ('absent', '1.3.5'), '1.8.5': (231, '1.3.5'), '1.8.6': (420, '1.3.7'), '1.8.7': (374, '2.6.14'), '1.9.0': (0, '1.3.7'), '1.9.1': (431, '2.6.14'), '1.9.2': (330, '2.6.14'), '1.9.3': (547, '2.6.14'), '2.0.0': (481, '2.6.14'), '2.1.3': (242, '2.6.14'), '2.2.7': (470, '2.6.14'), '2.3.6': (384, '2.7.6'), '2.4.3': (205, '2.7.6'), '3.0.5': (211, '3.3.20'), '3.1.7': (261, '3.5.22'), '3.2.8': (263, '3.5.22'), '3.3.8': (144, '3.5.22'), '4.0.9': (0, '3.7.2'), '4.1.0': (-1, '4.1.0.beta2'), '2.6.6': (146, '3.1.2'), '2.7.1': (83, '3.1.2'), '2.5.8': (224, '3.1.2')}[expected_ruby]
+patchlevel, default_gem_version = {'1.8.4': ('absent', '1.3.5'), '1.8.5': (231, '1.3.5'), '1.8.6': (420, '1.3.7'), '1.8.7': (374, '2.6.14'), '1.9.0': (0, '1.3.7'), '1.9.1': (431, '2.6.14'), '1.9.2': (330, '2.6.14'), '1.9.3': (547, '2.6.14'), '2.0.0': (481, '2.6.14'), '2.1.3': (242, '2.6.14'), '2.2.7': (470, '2.6.14'), '2.3.6': (384, '2.7.6'), '2.4.3': (205, '2.7.6'), '3.0.5': (211, '3.3.20'), '3.1.7': (261, '3.5.22'), '3.2.8': (263, '3.5.22'), '3.3.8': (144, '3.5.22'), '3.4.11': (137, '3.7.2'), '4.0.9': (0, '3.7.2'), '4.1.0': (-1, '4.1.0.beta2'), '2.6.6': (146, '3.1.2'), '2.7.1': (83, '3.1.2'), '2.5.8': (224, '3.1.2')}[expected_ruby]
 gem_version = args.rubygems_version or default_gem_version
 with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
     project = Path(temporary)
@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='bundler117-composition-') as temporary:
         env = dict(environment)
         if views is not None:
             env['BUNDLER_PURIFIER_INPUT_VIEWS'] = json.dumps(views)
-        result = subprocess.run([str(tools / 'bin/ruby'), str(root / 'tools/native_bundle_command.rb'), *arguments],
+        result = subprocess.run([str(tools / 'bin/ruby'), str(root / 'pkgs/cli/tools/native_bundle_command.rb'), *arguments],
                                 cwd=project, env=env, text=True, capture_output=True, timeout=90)
         assert (result.returncode == 0) == succeeds, result.stdout + result.stderr
         assert (project / 'Gemfile').read_text() == manifest
@@ -175,7 +175,7 @@ abort "SDK specification class changed" unless spec.class == Gem::Specification
 puts "NATIVE DEPENDENCY COLLECTION PASS"
 '''
     if expected_bundler == '0.9.9':
-        collection = 'require ' + json.dumps(str(root / 'tools/rubygems_inputs.rb')) + '\n' + collection
+        collection = 'require ' + json.dumps(str(root / 'pkgs/cli/tools/rubygems_inputs.rb')) + '\n' + collection
     assert run('exec', 'ruby', '-e', collection).strip() == 'NATIVE DEPENDENCY COLLECTION PASS'
 
     run('lock', '--local')

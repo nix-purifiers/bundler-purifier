@@ -13,7 +13,7 @@
   purifier,
   closureInfo,
   symlinkJoin,
-  integrationTools ? ../../tools,
+  integrationTools ? ../cli/tools,
 }:
 {
   src,
@@ -35,7 +35,10 @@
   srcFilter ? null,
 }:
 let
-  lock = (import ./read-native-environment-lock.nix { inherit lib; } { inherit src lockFile; }).lock;
+  lock =
+    (import ../../lib-overlays/default/read-native-environment-lock.nix { inherit lib; } {
+      inherit src lockFile;
+    }).lock;
   resolution = lock.nativeResolution;
   legacy = resolution.interface == "environment-v03";
   normalizedSdk = resolution.sdk // {

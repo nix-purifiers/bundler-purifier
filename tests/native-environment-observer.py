@@ -13,7 +13,7 @@ parser.add_argument("--ruby", required=True)
 parser.add_argument("--workspace", type=Path, required=True)
 parser.add_argument("--evidence", type=Path)
 args = parser.parse_args()
-observer = Path(__file__).resolve().parent.parent / "tools/native_environment_observe.rb"
+observer = Path(__file__).resolve().parent.parent / "pkgs/cli/tools/native_environment_observe.rb"
 results = []
 if args.evidence:
     args.evidence.mkdir()

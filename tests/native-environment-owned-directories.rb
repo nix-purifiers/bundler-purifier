@@ -2,7 +2,7 @@
 require "tmpdir"
 require "fileutils"
 require "digest"
-require_relative "../tools/native_environment_frontend"
+require_relative "../pkgs/cli/tools/native_environment_frontend"
 
 Dir.mktmpdir("native-owned-directory-") do |arena|
   root = File.join(arena, "project")

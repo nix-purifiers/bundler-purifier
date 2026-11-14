@@ -40,10 +40,14 @@ every gem, or the named ones, with `bundle update`, and then locks.
 
 `lock` relocks only when the Gemfile, `Gemfile.lock` or a gemspec changed,
 and `lock --force` relocks regardless; a relock of an unchanged project
-writes the same lockfile byte for byte. The lock run uses the Ruby the
-project asks for, in `.ruby-version` or in the `RUBY VERSION` section of
-`Gemfile.lock`, and builds nixpkgs' Ruby of that minor version when it
-differs from the Ruby the command runs on. The project's `.bundle/config`
+writes the same lockfile byte for byte. Local locking and development use
+the installed Ruby on your PATH, or the runtime you explicitly selected.
+That Ruby must satisfy the project's `.ruby-version`, `Gemfile.lock`, and
+dependency requirements. Missing or incompatible runtimes produce an
+error instead of installing a replacement interpreter. Nix fetches the
+locked dependency artifacts; local installation and execution keep your
+Ruby. Full sandboxed builds select a packaged or explicitly supplied SDK.
+The project's `.bundle/config`
 applies to the lock run, except the settings that would narrow what is
 locked (groups, path, frozen and deployment). The builds keep the
 committed `.bundle/config` too, so settings such as compile flags for a
@@ -144,7 +148,7 @@ The builder takes what it needs from the package set by name: `stdenv`,
 the packages the shared library's fetchers build with. It takes no
 `pkgs`. `bundler-purifier.buildBundlerProject.override` replaces any of
 them for one builder, and `bundler-purifier.overrideScope` replaces what
-the whole scope holds. `nix/lib/build-bundler-project.nix` documents the
+the whole scope holds. Public lock readers live in `lib-overlays/default`; the command owns its private runtime under `pkgs/cli`. `pkgs/build-bundler-project/default.nix` documents the
 builder's own arguments. A build runs on the Ruby of the minor version the
 lock was made with, and `ruby` replaces it, as it must for a version the
 builder has no Ruby for. `nativeBuildInputs` and `buildInputs` give native extensions what

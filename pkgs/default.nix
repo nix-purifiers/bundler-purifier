@@ -10,16 +10,16 @@ let
   purifierRef = "github:${pinned.owner}/${pinned.repo}/${pinned.rev}?narHash=${escape pinned.narHash}";
 in
 {
-  # The builder (nix/lib/build-bundler-project.nix), with the shared
+  # The builder (pkgs/build-bundler-project/default.nix), with the shared
   # library's `purifier` namespace and readLock from this flake's library.
-  buildBundlerProject = callPackage ../nix/lib/build-bundler-project.nix {
+  buildBundlerProject = callPackage ./build-bundler-project {
     inherit (lib) purifier;
     inherit (lib.bundler-purifier) readLock;
   };
 
   # The bundler-purifier command.
   cli = callPackage ./cli {
-    version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ../version.txt);
+    version = import ./version.nix;
     inherit purifierRef;
     inherit (lib) purifier;
   };

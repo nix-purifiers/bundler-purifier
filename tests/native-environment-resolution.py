@@ -16,7 +16,7 @@ parser.add_argument("--bindings", required=True, type=Path)
 parser.add_argument("--evidence", required=True, type=Path)
 args = parser.parse_args()
 args.evidence.mkdir()
-helper = Path(__file__).resolve().parent.parent / "tools/native_environment_prepare.rb"
+helper = Path(__file__).resolve().parent.parent / "pkgs/cli/tools/native_environment_prepare.rb"
 program = '''result=PurifierNativeEnvironmentPrepare.resolve(ARGV[0],ARGV[1],JSON.parse(File.binread(ARGV[2])),ARGV[3],bindings: JSON.parse(File.binread(ARGV[4])));puts JSON.generate(PurifierNativeEnvironment.canonical(result))'''
 commands = []
 

@@ -2,7 +2,7 @@
 require "rubygems"
 require "rubygems/format"
 require "fileutils"
-require File.expand_path("../tools/native_environment_platform", File.dirname(__FILE__))
+require File.expand_path("../pkgs/cli/tools/native_environment_platform", File.dirname(__FILE__))
 root = ARGV.fetch(0)
 FileUtils.mkdir_p(root)
 spec = Gem.loaded_specs.fetch("json").dup

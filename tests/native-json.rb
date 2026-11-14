@@ -4,7 +4,7 @@ require "fileutils"
 require "rubygems"
 require "json"
 require "open3"
-require_relative "../tools/native_bundle"
+require_relative "../pkgs/cli/tools/native_bundle"
 library = ARGV.shift || "json"
 Dir.mktmpdir("bundler-sdk-composition-") do |root|
   project = File.join(root,"producer")
@@ -14,7 +14,7 @@ Dir.mktmpdir("bundler-sdk-composition-") do |root|
   env = {"BUNDLE_GEMFILE"=>File.join(project,"Gemfile")}
   raise "producer lock failed" unless system(env,Gem.ruby,bundle,"lock","--local",chdir:project)
   archives = File.join(root,"archives")
-  raise "capture failed" unless system(env,Gem.ruby,bundle,"exec",Gem.ruby,File.expand_path("../tools/capture_gems.rb", __dir__),archives,chdir:project)
+  raise "capture failed" unless system(env,Gem.ruby,bundle,"exec",Gem.ruby,File.expand_path("../pkgs/cli/tools/capture_gems.rb", __dir__),archives,chdir:project)
   spec=File.join(root,"projection.json")
   File.write(spec,JSON.dump({"identity"=>"jsonfixture","archives"=>Dir[File.join(archives,"*.gem")],"intrinsics"=>JSON.parse(File.read(File.join(archives,"intrinsics.json")))}))
   repo=File.join(root,"repository");catalog=File.join(root,"catalog.json")

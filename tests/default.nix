@@ -199,8 +199,8 @@ in
         BUNDLER_PURIFIER_RUBYGEMS_TOOL = "${sharedTools}/rubygems_repository.rb";
       }
       ''
-            mkdir -p tools tests
-            cp -r ${../tools}/. tools/
+            mkdir -p pkgs/cli/tools tests
+            cp -r ${../pkgs/cli/tools}/. pkgs/cli/tools/
             cp ${./native-json.rb} tests/native-json.rb
             export HOME="$TMPDIR"
             for library in json psych pathname stringio; do
@@ -328,6 +328,9 @@ in
   # The shell for working on Lobsters, which CI's walkthrough uses.
   real-lobsters-shell = lobstersBuild.devShell;
 
+  # Keep the actual upstream install independently rebuildable in native CI.
+  real-lobsters-app = lobstersBuild.packages.app;
+
   # Lobsters installs its bundle of 180 gems offline in the sandbox, with
   # Ruby 4.0 and Bundler 4.0, and Rails loads with it.
   real-lobsters =
@@ -338,7 +341,8 @@ in
       ''
         export HOME="$TMPDIR"
         cd ${lobstersBuild.packages.app}
-        bundle exec rails --version | tee "$out"
+        bundle exec ruby -rbundler -rjson -e 'puts JSON.generate(ruby: RUBY_VERSION, bundler: Bundler::VERSION, platform: RUBY_PLATFORM)' | tee "$out"
+        bundle exec rails --version | tee -a "$out"
         grep -q '^Rails ' "$out"
         # A gem that opens its library at run time finds it.
         bundle exec ruby -e 'require "vips"; puts "libvips #{Vips.version_string}"' | tee -a "$out"
@@ -473,6 +477,13 @@ in
       src = ./fixtures/ruby33;
       ruby = ruby2025.ruby_3_3;
       nativeBuildInputs = [ ruby2025.stdenv.cc ];
+      checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
+    };
+    native34Bundler27 = import ./ruby34-bundler27-sdk.nix { inherit pkgs; };
+    project34Bundler27 = build {
+      src = ./fixtures/ruby34-bundler27;
+      ruby = native34Bundler27;
+      nativeBuildInputs = [ pkgs.stdenv.cc ];
       checkCommand = "bundle exec ruby -Ilib exe/historical-greeting";
     };
     rubies2017 = import ruby2017Source {
@@ -705,7 +716,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native20.sdk} ${project20.release.projections.rubygems} ${project20.release.projections.rubygems.catalog} 2.0.0
-          ${native20.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
+          ${native20.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/pkgs/cli/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby20-cli = cli.override {
@@ -721,7 +732,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native21.sdk} ${project21.release.projections.rubygems} ${project21.release.projections.rubygems.catalog} 2.1.3
-          ${native21.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
+          ${native21.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/pkgs/cli/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby21-cli = cli.override {
@@ -774,6 +785,22 @@ in
           touch "$out"
         '';
     ruby33-sdk = ruby2025.ruby_3_3;
+    ruby34-bundler27-sdk = native34Bundler27;
+    ruby34-bundler27-cli = cli.override {
+      projectRuby = native34Bundler27;
+      projectNativeBuildInputs = [ pkgs.stdenv.cc ];
+    };
+    ruby34-bundler27-native-extension = project34Bundler27.tests;
+    ruby34-bundler27-app = project34Bundler27.packages.app;
+    ruby34-bundler27-repository = project34Bundler27.release.projections.rubygems;
+    ruby34-bundler27-input-composition =
+      pkgs.runCommand "ruby34-bundler27-native-input-composition"
+        { nativeBuildInputs = [ pkgs.python3 ]; }
+        ''
+          export HOME="$TMPDIR"
+          python3 ${../.}/tests/historical-composition.py ${native34Bundler27} ${project34Bundler27.release.projections.rubygems} ${project34Bundler27.release.projections.rubygems.catalog} 3.4.11 2.7.2
+          touch "$out"
+        '';
     ruby33-native-extension = project33.tests;
     ruby33-app = project33.packages.app;
     ruby33-repository = project33.release.projections.rubygems;
@@ -1055,7 +1082,7 @@ in
         ''
           export HOME=$TMPDIR
           python3 ${../.}/tests/historical-composition.py ${native19.sdk} ${project19.release.projections.rubygems} ${project19.release.projections.rubygems.catalog} 1.9.3
-          ${native19.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/tools/rubygems_inputs.rb
+          ${native19.sdk}/bin/ruby ${./ruby19-method-hooks.rb} ${../.}/pkgs/cli/tools/rubygems_inputs.rb
           touch $out
         '';
     ruby19-cli = cli.override {

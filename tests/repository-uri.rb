@@ -4,7 +4,7 @@ require "rubygems"
 gem "bundler", "=2.3.27"
 require "bundler"
 require "uri"
-require File.expand_path("../tools/repository_uri", File.dirname(__FILE__))
+require File.expand_path("../pkgs/cli/tools/repository_uri", File.dirname(__FILE__))
 repository = "file:///nix/store/fixture-repository/"
 global = URI.parse(repository)
 source = Bundler::Source::Rubygems.new("remotes" => [repository])
