@@ -178,6 +178,8 @@ class PurifierNativeEnvironmentFrontend
     if index && args.fetch(index + 1).empty?
       args[index + 1] = "builtins.storePath #{JSON.generate(@sdk)}"
     end
+    index_expression = ENV.fetch("BUNDLER_PURIFIER_LEGACY_INDEX_RUBY_EXPRESSION", "")
+    args += ["--argstr", "legacyIndexRubyExpression", index_expression] unless index_expression.empty?
     args
   end
 

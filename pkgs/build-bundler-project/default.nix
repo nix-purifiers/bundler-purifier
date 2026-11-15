@@ -97,6 +97,8 @@
   ruby ? null,
   # Keep index serialization independent of old native package codecs.
   indexRuby ? null,
+  # Optional independent native index SDK for pre-lockfile project runtimes.
+  legacyIndexRuby ? null,
   # The archive projector is a host helper. RubyGems 1.x consumers use
   # Gem::Package as a module and cannot run its modern archive API.
   projectionRuby ? null,
@@ -752,6 +754,7 @@ if (import ../../lib-overlays/default/native-lock-version.nix lockFile) == 4 the
         srcFilter
         ;
       checkCommand = if checkCommand == "bundle exec rake" then "gem exec rake" else checkCommand;
+      inherit legacyIndexRuby;
       indexRuby = if indexRuby == null then ruby_3_4 else indexRuby;
       projectionRuby = if projectionRuby == null then ruby_3_4 else projectionRuby;
     }

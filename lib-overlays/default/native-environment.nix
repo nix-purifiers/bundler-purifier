@@ -121,12 +121,14 @@ let
             name = "Bundler::VERSION";
             value = "0.5.0";
           }
-        &&
-          item.rubygemsReport == {
-            name = "Gem::RubyGemsVersion";
-            value = "1.0.1";
-          }
-        && lib.any (entry: entry.name == "rubygems" && entry.version == "1.0.1") item.components
+        && item.rubygemsReport.name == "Gem::RubyGemsVersion"
+        && lib.elem item.rubygemsReport.value [
+          "1.0.1"
+          "0.9.5"
+        ]
+        && lib.any (
+          entry: entry.name == "rubygems" && entry.version == item.rubygemsReport.value
+        ) item.components
         && lib.any (entry: entry.name == "json" && entry.version == "1.1.3") item.components
       )
     );
@@ -168,7 +170,13 @@ let
       ++ lib.optional legacy "executables"
     ) item
     && (
-      !legacy || (list item.executables && lib.all executable item.executables && unique item.executables)
+      !legacy
+      || (
+        list item.executables
+        && lib.all executable item.executables
+        && unique item.executables
+        && (value.sdk.rubygemsReport.value != "0.9.5" || item.executables == [ ] || item.bindir == "bin")
+      )
     )
     && lib.all (key: scalar item.${key}) [
       "name"
@@ -252,11 +260,14 @@ let
       item:
       [ item.specificationPath ]
       ++ lib.optional (
-        item.requirePaths != [ "lib" ]
-        || !(lib.elem item.bindir [
-          null
-          "bin"
-        ])
+        !(legacy && value.sdk.rubygemsReport.value == "0.9.5")
+        && (
+          item.requirePaths != [ "lib" ]
+          || !(lib.elem item.bindir [
+            null
+            "bin"
+          ])
+        )
       ) (item.installedPath + "/.require_paths")
     ) value.packages;
   valid =

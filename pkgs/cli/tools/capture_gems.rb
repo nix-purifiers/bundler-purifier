@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Capture the target Bundler SDK's actual runtime graph after native builds.
 require "rubygems"
-gem "bundler", "= 0.3.1" if !defined?(Gem::VERSION) && defined?(Gem::RubyGemsVersion) && Gem::RubyGemsVersion == "1.0.1"
+gem "bundler", "= 0.3.1" if !defined?(Gem::VERSION) && defined?(Gem::RubyGemsVersion) && ["1.0.1", "0.9.5"].include?(Gem::RubyGemsVersion)
 require "bundler"
 require File.expand_path("ruby_config", File.dirname(__FILE__))
 require "rubygems/package"
@@ -58,7 +58,7 @@ owned = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_OWN_ARCHIVES", "[]")).inject({}) 
   result
 end
 roots = JSON.parse(ENV.fetch("BUNDLER_PURIFIER_PROJECT_ROOTS", "[]"))
-native_v03 = !defined?(Bundler::Definition) && defined?(Bundler::ManifestFile) && Bundler::VERSION == "0.5.0" && defined?(Gem::RubyGemsVersion) && Gem::RubyGemsVersion == "1.0.1" && Gem.loaded_specs["bundler"].version.to_s == "0.3.1"
+native_v03 = !defined?(Bundler::Definition) && defined?(Bundler::ManifestFile) && Bundler::VERSION == "0.5.0" && defined?(Gem::RubyGemsVersion) && ["1.0.1", "0.9.5"].include?(Gem::RubyGemsVersion) && Gem.loaded_specs["bundler"].version.to_s == "0.3.1"
 native_prelock = native_v03 || (!defined?(Bundler::Definition) && defined?(Bundler::Bundle) && Bundler::Bundle.respond_to?(:load))
 # Gem101's dependency model has no development/runtime discriminator.
 runtime_dependencies = lambda { |spec| native_v03 ? spec.dependencies : spec.runtime_dependencies }
@@ -257,6 +257,10 @@ selected.values.each do |original|
         spec.metadata = spec.metadata.merge("nix-purifier-ruby-engine" => (defined?(RUBY_ENGINE) ? RUBY_ENGINE : "ruby"),
                                            "nix-purifier-ruby-version" => RUBY_VERSION)
       end
+    end
+    if native_v03 && Gem::RubyGemsVersion == "0.9.5"
+      require File.expand_path("native_environment_platform", File.dirname(__FILE__))
+      PurifierGem095Platform.for_build(spec)
     end
     spec.cert_chain = []
     spec.extra_rdoc_files = spec.extra_rdoc_files.select { |path| File.file?(File.join(directory, path)) }

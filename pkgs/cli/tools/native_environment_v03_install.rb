@@ -7,7 +7,7 @@ require "rubygems/source_index"
 require "pathname"
 require "fileutils"
 require "digest/sha2"
-raise "unsupported v03 SDK" unless RUBY_VERSION == "1.8.3" && defined?(Gem::RubyGemsVersion) && Gem::RubyGemsVersion == "1.0.1"
+raise "unsupported v03 SDK" unless RUBY_VERSION == "1.8.3" && defined?(Gem::RubyGemsVersion) && ["1.0.1", "0.9.5"].include?(Gem::RubyGemsVersion)
 gem "bundler", "= 0.3.1"
 require "bundler"
 raise "wrong v03 client report" unless Bundler::VERSION == "0.5.0"
@@ -65,6 +65,7 @@ identities = selected.map { |spec| [spec.name, spec.version.to_s, spec.platform.
 raise "duplicate native v03 selected names" unless identities.map { |key| key[0] }.uniq.size == identities.size
 executable_owners = {}
 selected.each do |spec|
+  raise "native Gem095 executables require bin payloads" if Gem::RubyGemsVersion == "0.9.5" && !spec.executables.empty? && spec.bindir != "bin"
   spec.executables.each do |name|
     raise "conflicting v03 executable owners" if executable_owners[name]
     executable_owners[name] = spec.name

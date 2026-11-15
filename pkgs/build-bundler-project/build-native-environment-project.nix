@@ -28,6 +28,8 @@
   nativeBuildInputs ? [ ],
   buildInputs ? [ ],
   indexRuby ? ruby_3_4,
+  # Gem095 projects can select the genuine Gem101 index context separately.
+  legacyIndexRuby ? null,
   projectionRuby ? ruby_3_4,
   fetchers ? { },
   srcFilter ? null,
@@ -264,7 +266,7 @@ let
       // lib.optionalAttrs legacy {
         versionScheme = "legacy-numeric-v1";
         inherit nativeSdkIdentity;
-        legacyIndexRuby = ruby;
+        legacyIndexRuby = if legacyIndexRuby == null then ruby else legacyIndexRuby;
       }
     );
   projections = projectionFor (map (spec: spec.name) lock.projectSpecs);

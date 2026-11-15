@@ -1,0 +1,3 @@
+#!/usr/bin/env ruby
+require "historical_greeting"
+puts "#{HistoricalGreeting.answer} on #{RUBY_VERSION}"

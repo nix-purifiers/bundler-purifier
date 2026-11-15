@@ -8,7 +8,7 @@ ARGV.shift if ARGV.first == "--"
 raise "usage: native_environment_exec.rb PROJECT SDK COMMAND..." unless project && sdk && !ARGV.empty?
 command = ARGV.dup
 ARGV.clear
-legacy = !defined?(Gem::VERSION) && defined?(Gem::RubyGemsVersion) && Gem::RubyGemsVersion == "1.0.1" && RUBY_VERSION == "1.8.3"
+legacy = !defined?(Gem::VERSION) && defined?(Gem::RubyGemsVersion) && ["1.0.1", "0.9.5"].include?(Gem::RubyGemsVersion) && RUBY_VERSION == "1.8.3"
 gem "bundler", legacy ? "= 0.3.1" : "= 0.8.1"
 require "bundler"
 valid = legacy ? Bundler::VERSION == "0.5.0" : (Gem::VERSION == "1.3.5" && Bundler::VERSION == "0.8.1")

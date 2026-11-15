@@ -20,7 +20,7 @@ module PurifierEnvironmentObservation
   end
 
   def self.legacy?
-    !defined?(Gem::VERSION) && defined?(Gem::RubyGemsVersion) && Gem::RubyGemsVersion == "1.0.1" && RUBY_VERSION == "1.8.3"
+    !defined?(Gem::VERSION) && defined?(Gem::RubyGemsVersion) && ["1.0.1", "0.9.5"].include?(Gem::RubyGemsVersion) && RUBY_VERSION == "1.8.3"
   end
 
   def self.runtime_dependency?(dependency)
@@ -182,7 +182,10 @@ module PurifierEnvironmentObservation
       expected_files = payload_names.keys
       # Genuine Gem135 writes this one extra marker via RequirePathsBuilder.
       # Its exact content comes from the native specification's public fields.
-      unless cached.require_paths == ["lib"] && (cached.bindir.nil? || cached.bindir == "bin")
+      # Original Gem095 has no RequirePathsBuilder; its complete installed
+      # file set must match archive payloads without a generated marker.
+      gem095 = legacy && Gem::RubyGemsVersion == "0.9.5"
+      unless gem095 || (cached.require_paths == ["lib"] && (cached.bindir.nil? || cached.bindir == "bin"))
         marker = File.join(spec.full_gem_path, ".require_paths")
         within(root, marker)
         expected_marker = cached.require_paths.map { |path| path + "\n" }.join

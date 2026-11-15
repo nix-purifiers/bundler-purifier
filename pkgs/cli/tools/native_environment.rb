@@ -138,10 +138,11 @@ module PurifierNativeEnvironment
       scalar!(report.fetch("value"), key)
     end
     profiles = {
-      "0.8.1" => ["0.8.1", "Gem::VERSION", "1.3.5", "1.8.6"],
-      "0.3.1" => ["0.5.0", "Gem::RubyGemsVersion", "1.0.1", "1.1.3"]
+      ["0.8.1", "1.3.5"] => ["0.8.1", "Gem::VERSION", "1.3.5", "1.8.6"],
+      ["0.3.1", "1.0.1"] => ["0.5.0", "Gem::RubyGemsVersion", "1.0.1", "1.1.3"],
+      ["0.3.1", "0.9.5"] => ["0.5.0", "Gem::RubyGemsVersion", "0.9.5", "1.1.3"]
     }
-    profile = profiles[artifact.fetch("version")]
+    profile = profiles[[artifact.fetch("version"), value.fetch("rubygemsReport").fetch("value")]]
     reject!("unsupported native interface identity") unless profile && value.fetch("clientReport") == {"name" => "Bundler::VERSION", "value" => profile[0]} && value.fetch("rubygemsReport") == {"name" => profile[1], "value" => profile[2]}
     reject!("RubyGems component conflicts with observed version") unless components.any? { |component| component.fetch("name") == "rubygems" && component.fetch("version") == profile[2] }
     reject!("JSON component conflicts with native profile") unless components.any? { |component| component.fetch("name") == "json" && component.fetch("version") == profile[3] }
@@ -192,6 +193,7 @@ module PurifierNativeEnvironment
           reject!("unsafe native executable") unless name.is_a?(String) && name.match?(/\A[A-Za-z0-9_.-]+\z/) && !%w[. ..].include?(name)
         end
         unique!(package.fetch("executables"), "native executable")
+        reject!("native Gem095 executables require bin payloads") if value.fetch("sdk").fetch("rubygemsReport").fetch("value") == "0.9.5" && !package.fetch("executables").empty? && package.fetch("bindir") != "bin"
       end
       %w[name version platform].each { |key| scalar!(package.fetch(key), key) }
       digest!(package.fetch("archiveHash"))
@@ -266,7 +268,8 @@ module PurifierNativeEnvironment
       expected_specification = prefix + "specifications/" + installed.delete_prefix(installed_prefix) + ".gemspec"
       reject!("native specification role conflicts with installed package") unless package.fetch("specificationPath") == expected_specification
       required_snapshots << expected_specification
-      unless package.fetch("requirePaths") == ["lib"] && [nil, "bin"].include?(package.fetch("bindir"))
+      gem095 = legacy && value.fetch("sdk").fetch("rubygemsReport").fetch("value") == "0.9.5"
+      unless gem095 || (package.fetch("requirePaths") == ["lib"] && [nil, "bin"].include?(package.fetch("bindir")))
         required_snapshots << installed + "/.require_paths"
       end
     end

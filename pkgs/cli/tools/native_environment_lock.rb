@@ -30,6 +30,7 @@ module PurifierNativeEnvironmentLock
       CONTRACT.list!(spec.fetch("executables"), "root executable")
       spec.fetch("executables").each { |name| filename!(name) }
       CONTRACT.unique!(spec.fetch("executables"), "root executable")
+      CONTRACT.reject!("native Gem095 executables require bin payloads") if resolution.fetch("sdk").fetch("rubygemsReport").fetch("value") == "0.9.5" && !spec.fetch("executables").empty? && spec.fetch("bindir") != "bin"
       CONTRACT.list!(spec.fetch("requirePaths"), "root load path")
       spec.fetch("requirePaths").each { |path| CONTRACT.load_path!(path) }
       CONTRACT.load_path!(spec.fetch("bindir")) unless spec.fetch("bindir").nil?
